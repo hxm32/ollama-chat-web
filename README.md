@@ -90,6 +90,11 @@ Stored locally using `localStorage`:
 
 <img width="1470" height="802" alt="Screenshot 2026-06-17 at 6 22 15 PM" src="https://github.com/user-attachments/assets/26de1d11-14ed-472f-9a1d-bf6cb0186017" />
 
+<img width="1470" height="870" alt="Screenshot 2026-06-17 at 6 39 05 PM" src="https://github.com/user-attachments/assets/fc16d2b7-1de9-4da7-8a74-7e316caaf658" />
+
+<img width="1232" height="257" alt="Screenshot 2026-06-17 at 6 39 52 PM" src="https://github.com/user-attachments/assets/2021e621-fd7c-49b6-87fb-30c0ea60c95d" />
+
+<img width="1470" height="872" alt="Screenshot 2026-06-17 at 6 41 00 PM" src="https://github.com/user-attachments/assets/b0d4a7a4-8cb8-4536-9748-18686854f17c" />
 
 ---
 
