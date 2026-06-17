@@ -440,23 +440,62 @@ marked.use({ renderer });
 
 function renderMarkdown(text) {
   if (!text) return '';
-  // Extract math before HTML escaping
-  const mathBlocks = [], mathInlines = [];
-  text = text.replace(/\$\$([\s\S]*?)\$\$/g, (_, m) => { mathBlocks.push(m); return `\x00MB${mathBlocks.length-1}\x00`; });
-  text = text.replace(/\$([^\$\n]+?)\$/g, (_, m) => { mathInlines.push(m); return `\x00MI${mathInlines.length-1}\x00`; });
+
+  const mathBlocks = [];
+  const mathInlines = [];
+
+  text = text.replace(/\$\$([\s\S]*?)\$\$/g, (_, math) => {
+    const idx = mathBlocks.push(math) - 1;
+    return `<span data-katex-block="${idx}"></span>`;
+  });
+
+  text = text.replace(/\$([^\$\n]+?)\$/g, (_, math) => {
+    const idx = mathInlines.push(math) - 1;
+    return `<span data-katex-inline="${idx}"></span>`;
+  });
 
   let html = marked.parse(text);
-  html = DOMPurify.sanitize(html, { ALLOWED_URI_REGEXP: /^https?:/i });
 
-  // Restore math
-  html = html.replace(/\x00MB(\d+)\x00/g, (_, i) => {
-    try { return katex.renderToString(mathBlocks[i], { displayMode: true, throwOnError: false, trust: false }); }
-    catch { return DOMPurify.sanitize(mathBlocks[i]); }
+  html = DOMPurify.sanitize(html, {
+    ALLOWED_URI_REGEXP: /^https?:/i
   });
-  html = html.replace(/\x00MI(\d+)\x00/g, (_, i) => {
-    try { return katex.renderToString(mathInlines[i], { displayMode: false, throwOnError: false, trust: false }); }
-    catch { return DOMPurify.sanitize(mathInlines[i]); }
-  });
+
+  html = html.replace(
+    /<span data-katex-block="(\d+)"><\/span>/g,
+    (_, i) => {
+      try {
+        return katex.renderToString(
+          mathBlocks[Number(i)],
+          {
+            displayMode: true,
+            throwOnError: false,
+            trust: false
+          }
+        );
+      } catch {
+        return '';
+      }
+    }
+  );
+
+  html = html.replace(
+    /<span data-katex-inline="(\d+)"><\/span>/g,
+    (_, i) => {
+      try {
+        return katex.renderToString(
+          mathInlines[Number(i)],
+          {
+            displayMode: false,
+            throwOnError: false,
+            trust: false
+          }
+        );
+      } catch {
+        return '';
+      }
+    }
+  );
+
   return html;
 }
 
