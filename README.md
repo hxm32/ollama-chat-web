@@ -89,19 +89,19 @@ Stored locally using `localStorage`:
 
 ## Screenshots
 ### Dark and light mode:
-<img width="1470" height="801" alt="Screenshot 2026-06-17 at 6 22 01 PM" src="https://github.com/user-attachments/assets/fca25bc1-0815-4e47-a738-530118442f82" />
+<img width="1470" height="871" alt="Screenshot 2026-06-18 at 4 39 39 PM" src="https://github.com/user-attachments/assets/cac65789-14f0-4df4-b597-c14eb4f052b5" />
 
-<img width="1470" height="802" alt="Screenshot 2026-06-17 at 6 22 15 PM" src="https://github.com/user-attachments/assets/26de1d11-14ed-472f-9a1d-bf6cb0186017" />
+<img width="1470" height="871" alt="Screenshot 2026-06-18 at 4 39 53 PM" src="https://github.com/user-attachments/assets/52f57345-99a5-46cf-9c27-b50966d51ff4" />
 
 ### Model responses:
-<img width="1470" height="802" alt="Screenshot 2026-06-17 at 6 23 17 PM" src="https://github.com/user-attachments/assets/3612f23f-039e-4448-af27-275bf520cb38" />
+<img width="1470" height="870" alt="Screenshot 2026-06-18 at 4 42 56 PM" src="https://github.com/user-attachments/assets/c20595ce-7775-4afa-84a1-26f92508d51e" />
 
-<img width="1470" height="870" alt="Screenshot 2026-06-17 at 6 39 05 PM" src="https://github.com/user-attachments/assets/fc16d2b7-1de9-4da7-8a74-7e316caaf658" />
+<img width="1470" height="799" alt="Screenshot 2026-06-18 at 4 44 27 PM" src="https://github.com/user-attachments/assets/75f4ec16-18fe-4565-a4bf-7f10286c1580" />
 
-<img width="1470" height="872" alt="Screenshot 2026-06-17 at 6 41 00 PM" src="https://github.com/user-attachments/assets/b0d4a7a4-8cb8-4536-9748-18686854f17c" />
+<img width="1470" height="800" alt="Screenshot 2026-06-18 at 4 46 23 PM" src="https://github.com/user-attachments/assets/3b0ffcff-973a-4523-afbb-eb363d1717ab" />
 
-### Settings menu:
-<img width="1232" height="257" alt="Screenshot 2026-06-17 at 6 39 52 PM" src="https://github.com/user-attachments/assets/2021e621-fd7c-49b6-87fb-30c0ea60c95d" />
+### System prompt, ssh, settings and diagonstics menu:
+<img width="1232" height="297" alt="Screenshot 2026-06-18 at 4 48 03 PM" src="https://github.com/user-attachments/assets/de5d7fe9-0b83-407d-b2ac-ff89510c3deb" />
 
 ---
 
