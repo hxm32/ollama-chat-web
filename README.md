@@ -19,7 +19,11 @@ Built with plain HTML, CSS, and JavaScript - no build tools, frameworks, or back
 * Copy messages with one click
 * Streaming responses with live token statistics
 * Stop generation mid-response
-
+* Chat search
+* Manual conversation renaming
+* Export chats to JSON
+* Import chats from JSON backups
+  
 ### Model Controls
 
 * Automatic Ollama model discovery
@@ -66,7 +70,8 @@ ssh -L 11434:localhost:11434 user@server -N
 * Accessibility-focused design
 * Auto-resizing input box
 * Scroll position preservation
-
+* Virtualized rendering for large conversations
+  
 ### Persistence
 
 Stored locally using `localStorage`:
@@ -79,7 +84,7 @@ Stored locally using `localStorage`:
 * Generation settings
 * SSH settings
 * UI state
-
+* Chat backup and restore via JSON export/import
 ---
 
 ## Screenshots
@@ -358,15 +363,25 @@ Requires:
 
 ## Future Improvements
 
-* Export/import chats
-* Chat search
 * Drag-and-drop file support
 * Image model support
 * Markdown export
 * Prompt templates
 * Multi-model conversations
 * Conversation folders
+* Full-text message search
 
+---
+## Recent Updates
+
+### June 2026
+
+- Added chat search
+- Added manual chat renaming
+- Added chat export/import
+- Improved performance for large conversation histories
+- Improved conversation management
+  
 ---
 
 ## License
