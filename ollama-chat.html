@@ -111,6 +111,8 @@ select option{background:var(--surface)}
 .setting-group input,.setting-group select{width:100px}
 #settings-bar{flex-wrap:wrap;gap:14px;align-items:center}
 .settings-hint{font-size:11px;color:var(--text-dim);align-self:flex-end}
+.defaults-btn{background:none;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-dim);cursor:pointer;font-size:11px;font-weight:600;padding:5px 10px;transition:color 0.15s,border-color 0.15s;align-self:center}
+.defaults-btn:hover,.defaults-btn:focus-visible{color:var(--text-muted);border-color:var(--border-light)}
 
 /* DIAGNOSTICS BAR */
 #diag-bar{border-bottom:1px solid var(--border);background:var(--surface-2);padding:8px 14px;flex-shrink:0;display:none;gap:16px;align-items:center;flex-wrap:wrap;font-size:11px;font-family:'JetBrains Mono',monospace}
@@ -220,6 +222,9 @@ footer{border-top:1px solid var(--border);background:var(--surface);padding:12px
 
 /* MISC */
 .error-msg{color:var(--text-dim);font-size:13px;font-style:italic;padding:4px 0}
+.truncation-notice{margin-top:10px;padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;color:var(--text-muted);line-height:1.5}
+.truncation-fix-btn{background:none;border:1px solid var(--border-light);border-radius:var(--radius-sm);color:var(--text);cursor:pointer;font-size:11px;font-weight:600;padding:2px 8px;margin:0 2px;transition:opacity 0.15s}
+.truncation-fix-btn:hover,.truncation-fix-btn:focus-visible{opacity:0.8}
 .retry-btn{background:none;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text-dim);cursor:pointer;font-size:11px;padding:3px 9px;margin-top:6px;display:block;transition:color 0.15s,border-color 0.15s}
 .retry-btn:hover,.retry-btn:focus-visible{color:var(--text-muted);border-color:var(--border-light)}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000}
@@ -273,7 +278,7 @@ footer{border-top:1px solid var(--border);background:var(--surface);padding:12px
     <div class="header-left">
       <button class="icon-btn-plain" id="sidebar-toggle" aria-label="Toggle sidebar" title="Toggle sidebar">☰</button>
       <div class="logo" aria-label="Ollama Chat">ollama<span>/chat</span></div>
-      <button class="status-pill" id="status-pill" aria-label="Connection status - click to refresh" title="Click to refresh models">
+      <button class="status-pill" id="status-pill" aria-label="Connection status, click to refresh" title="Click to refresh models">
         <div class="status-dot" id="status-dot" role="status" aria-live="polite"></div>
         <span class="status-text" id="status-text">connecting…</span>
       </button>
@@ -284,17 +289,17 @@ footer{border-top:1px solid var(--border);background:var(--surface);padding:12px
         <input type="number" id="port-input" value="11434" min="1" max="65535" aria-label="Ollama port">
       </div>
       <div class="ctrl-group">
-        <span class="ctrl-label" title="AI model to use - pull with: ollama pull modelname">Model</span>
+        <span class="ctrl-label" title="AI model to use, pull with: ollama pull modelname">Model</span>
         <select id="model-select" aria-label="Select AI model">
           <option value="">- connecting… -</option>
         </select>
       </div>
       <div class="divider" role="separator"></div>
-      <button class="toggle-btn" id="system-btn" title="Set a system prompt - persona and standing instructions for the AI" aria-pressed="false">System</button>
-      <button class="toggle-btn" id="think-btn" title="Extended thinking - model reasons before replying. Requires deepseek-r1, qwen3, etc." aria-pressed="false">Thinking</button>
+      <button class="toggle-btn" id="system-btn" title="Set a system prompt, persona and standing instructions for the AI" aria-pressed="false">System</button>
+      <button class="toggle-btn" id="think-btn" title="Extended thinking, model reasons before replying. Requires deepseek-r1, qwen3, etc." aria-pressed="false">Thinking</button>
       <button class="toggle-btn" id="ssh-btn" title="Connect to Ollama on a remote machine via SSH tunnel" aria-pressed="false">SSH</button>
       <button class="toggle-btn" id="settings-btn" title="Adjust generation parameters" aria-pressed="false">Settings</button>
-      <button class="toggle-btn" id="diag-btn" title="Show connection diagnostics - Ollama version, loaded models" aria-pressed="false">Diagnostics</button>
+      <button class="toggle-btn" id="diag-btn" title="Show connection diagnostics: Ollama version, loaded models" aria-pressed="false">Diagnostics</button>
       <div class="divider" role="separator"></div>
       <button class="icon-btn" id="theme-btn" title="Toggle light/dark theme" aria-label="Toggle theme">☀</button>
       <button class="icon-btn" id="clear-btn" title="Clear current chat" aria-label="Clear chat">Clear</button>
@@ -303,7 +308,7 @@ footer{border-top:1px solid var(--border);background:var(--surface);padding:12px
 
   <div id="system-prompt-bar" class="expand-bar" role="region" aria-label="System prompt">
     <textarea id="system-prompt" rows="2" maxlength="4000"
-      placeholder="System prompt - sets the AI's persona and rules. E.g. 'You are a concise assistant. Always respond in bullet points.'"
+      placeholder="System prompt, sets the AI's persona and rules. E.g. 'You are a concise assistant. Always respond in bullet points.'"
       aria-label="System prompt"></textarea>
     <span class="char-counter" id="sys-char-counter" aria-live="polite">0 / 4000</span>
   </div>
@@ -330,7 +335,7 @@ footer{border-top:1px solid var(--border);background:var(--surface);padding:12px
       <input type="number" id="max-tokens" value="2048" min="64" max="32768" step="64">
     </div>
     <div class="setting-group">
-      <label for="ctx-size" title="Context window - how much conversation history the model sees.">Context</label>
+      <label for="ctx-size" title="Context window, how much conversation history the model sees.">Context</label>
       <input type="number" id="ctx-size" value="4096" min="512" max="131072" step="512">
     </div>
     <div class="setting-group">
@@ -349,6 +354,7 @@ footer{border-top:1px solid var(--border);background:var(--surface);padding:12px
       <label for="keep-alive" title="How long Ollama keeps the model loaded. E.g. 5m, 1h, -1 = forever.">Keep-Alive</label>
       <input type="text" id="keep-alive" value="5m" style="width:70px">
     </div>
+    <button class="defaults-btn" id="defaults-btn" title="Reset all generation settings to their defaults">Default</button>
     <span class="settings-hint">Changes apply to the next message.</span>
   </div>
 
@@ -363,7 +369,7 @@ footer{border-top:1px solid var(--border);background:var(--surface);padding:12px
     <div class="empty-state" id="empty-state">
       <div class="empty-logo">ollama<span>/chat</span></div>
       <div class="onboarding" role="list">
-        <div class="ob-step" role="listitem"><span class="ob-num" aria-hidden="true">1</span><span>Make sure <strong>Ollama is running</strong>. The status pill shows connection - click it to retry.</span></div>
+        <div class="ob-step" role="listitem"><span class="ob-num" aria-hidden="true">1</span><span>Make sure <strong>Ollama is running</strong>. The status pill shows connection, click it to retry.</span></div>
         <div class="ob-step" role="listitem"><span class="ob-num" aria-hidden="true">2</span><span>Select a <strong>model</strong> from the dropdown. No models? Run <code>ollama pull llama3</code> in a terminal.</span></div>
         <div class="ob-step" role="listitem"><span class="ob-num" aria-hidden="true">3</span><span>Type a message and press <strong>Enter</strong> to chat. <strong>Shift+Enter</strong> for a new line.</span></div>
         <div class="ob-step" role="listitem"><span class="ob-num" aria-hidden="true">4</span><span>Use <strong>System</strong> for a persona, <strong>Settings</strong> to tune generation, <strong>SSH</strong> for remote. Chats save automatically in the sidebar.</span></div>
@@ -404,8 +410,17 @@ footer{border-top:1px solid var(--border);background:var(--surface);padding:12px
 
 const SCHEMA_VERSION = 3;
 const VIRTUAL_WINDOW = 100; // max messages rendered at once
-const HLJS_SIZE_LIMIT = 5000; // chars - skip auto-detection above this
+const HLJS_SIZE_LIMIT = 5000; // chars, skip auto-detection above this
 const SYS_MAX = 4000;
+
+const DEFAULTS = {
+  maxTokens: 2048,
+  ctxSize: 4096,
+  temperature: 0.8,
+  topP: 0.9,
+  seed: -1,
+  keepAlive: '5m',
+};
 
 // ── MARKDOWN ──
 marked.setOptions({ breaks: true, gfm: true });
@@ -502,6 +517,7 @@ const tempEl      = $id('temperature');
 const topPEl      = $id('top-p');
 const seedEl      = $id('seed-input');
 const kaEl        = $id('keep-alive');
+const defaultsBtn = $id('defaults-btn');
 const sidebarEl   = $id('sidebar');
 const sidebarTog  = $id('sidebar-toggle');
 const chatListEl  = $id('chat-list');
@@ -602,7 +618,7 @@ function loadPersisted() {
     if (full && Array.isArray(full.messages)) {
       conversations[id] = full;
     } else {
-      // index entry exists but no messages stored - recreate empty
+      // index entry exists but no messages stored, recreate empty
       conversations[id] = { ...meta, messages: [] };
     }
   }
@@ -930,6 +946,7 @@ function buildMsgEl(msg, index) {
     const cd = document.createElement('div');
     cd.innerHTML = renderMarkdown(msg.content);
     bubble.appendChild(cd);
+    if (msg.truncated) bubble.appendChild(buildTruncationNotice());
   } else {
     bubble.textContent = msg.content;
   }
@@ -958,6 +975,21 @@ function makeBtn(label, handler) {
   b.className = 'action-btn'; b.textContent = label; b.setAttribute('aria-label', label);
   b.addEventListener('click', handler);
   return b;
+}
+
+function buildTruncationNotice() {
+  const notice = document.createElement('div');
+  notice.className = 'truncation-notice';
+  notice.innerHTML = `Response cut off at the token limit. <button class="truncation-fix-btn">Increase Max Tokens</button> to get longer replies.`;
+  notice.querySelector('button').addEventListener('click', () => {
+    const current = parseInt(maxTokEl.value) || 2048;
+    maxTokEl.value = Math.max(current * 2, current + 1024);
+    if (parseInt(maxTokEl.value) > (parseInt(ctxSzEl.value) || 0)) ctxSzEl.value = maxTokEl.value;
+    persist();
+    if (!settingsBar.classList.contains('visible')) toggleBar(settingsBtn, settingsBar);
+    notice.remove();
+  });
+  return notice;
 }
 
 function buildThinkBlock(content, isStreaming) {
@@ -1078,7 +1110,7 @@ async function sendFromIndex(fromIndex) {
     scrollToBottom(true);
 
     const reader = res.body.getReader(); const decoder = new TextDecoder();
-    streamBuf = ''; let totalTokens = 0;
+    streamBuf = ''; let totalTokens = 0; let doneReason = null;
 
     const scheduleUpdate = () => {
       if (rafPending) return;
@@ -1127,6 +1159,7 @@ async function sendFromIndex(fromIndex) {
             assistantMsg.content += data.message.content;
           }
           if (data.eval_count) totalTokens = data.eval_count;
+          if (data.done_reason) doneReason = data.done_reason;
           scheduleUpdate();
         } catch(e) { log.warn('stream parse error:', e.message); }
       }
@@ -1139,6 +1172,11 @@ async function sendFromIndex(fromIndex) {
     assistantMsg.tokens = totalTokens;
     assistantMsg.tps = totalTokens > 0 ? parseFloat((totalTokens/elapsed).toFixed(1)) : 0;
     if (totalTokens > 0) { tokEl.textContent=totalTokens+' tok'; spdEl.textContent=assistantMsg.tps+' tok/s'; }
+
+    if (doneReason === 'length') {
+      assistantMsg.truncated = true;
+      bubble.appendChild(buildTruncationNotice());
+    }
 
     const regenBtn = makeBtn('Regenerate', () => { const idx=getMessages().findIndex(m=>m===assistantMsg); if(idx>=0) regenerate(idx); });
     const cp2 = makeBtn('Copy', () => { navigator.clipboard.writeText(assistantMsg.content).then(()=>{cp2.textContent='Copied!';setTimeout(()=>cp2.textContent='Copy',1500);}).catch(e=>log.warn(e)); });
@@ -1162,7 +1200,7 @@ async function sendFromIndex(fromIndex) {
       log.error('Generation error:', err);
       const ew = document.createElement('div'); ew.className='msg-wrapper assistant';
       const ed = document.createElement('div'); ed.className='error-msg';
-      ed.textContent = err.message.includes('fetch') ? 'Cannot reach Ollama - is it running?' : err.message;
+      ed.textContent = err.message.includes('fetch') ? 'Cannot reach Ollama, is it running?' : err.message;
       const rb = document.createElement('button'); rb.className='retry-btn'; rb.textContent='Retry';
       rb.addEventListener('click', () => { ew.remove(); sendFromIndex(fromIndex); });
       ew.append(ed, rb); chatEl.appendChild(ew); scrollToBottom(); setStatus('error','error');
@@ -1227,7 +1265,27 @@ sidebarTog.addEventListener('click', () => { sidebarEl.classList.toggle('collaps
 newChatBtn.addEventListener('click', newConvo);
 sysPmt.addEventListener('input', () => { updateCharCount(); persist(); });
 [sshHost,sshRemPort,sshLocPort].forEach(el => el.addEventListener('input', () => { updateSshCmd(); persist(); }));
-[maxTokEl,ctxSzEl,tempEl,topPEl,seedEl,kaEl].forEach(el => el.addEventListener('input', persist));
+[tempEl,topPEl,seedEl,kaEl].forEach(el => el.addEventListener('input', persist));
+
+maxTokEl.addEventListener('input', () => {
+  const maxTok = parseInt(maxTokEl.value) || 0;
+  const ctx = parseInt(ctxSzEl.value) || 0;
+  if (maxTok > ctx) ctxSzEl.value = maxTok;
+  persist();
+});
+ctxSzEl.addEventListener('input', persist);
+
+defaultsBtn.addEventListener('click', async () => {
+  const ok = await showModal('Reset to defaults?', 'Max Tokens, Context, Temperature, Top-p, Seed, and Keep-Alive will be restored to their default values.');
+  if (!ok) return;
+  maxTokEl.value = DEFAULTS.maxTokens;
+  ctxSzEl.value = DEFAULTS.ctxSize;
+  tempEl.value = DEFAULTS.temperature;
+  topPEl.value = DEFAULTS.topP;
+  seedEl.value = DEFAULTS.seed;
+  kaEl.value = DEFAULTS.keepAlive;
+  persist();
+});
 clearBtn.addEventListener('click', () => {
   if (abortCtrl) abortCtrl.abort();
   setGenerating(false); userScrolledUp=false; isProgrammatic=false;
