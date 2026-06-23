@@ -381,7 +381,7 @@ Requires:
 - Added chat export/import
 - Improved performance for large conversation histories
 - Improved conversation management
-  
+- Add truncation notice, auto-context sync, and settings reset button
 ---
 
 ## License
