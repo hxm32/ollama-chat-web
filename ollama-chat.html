@@ -296,7 +296,7 @@ footer{border-top:1px solid var(--border);background:var(--surface);padding:12px
       </div>
       <div class="divider" role="separator"></div>
       <button class="toggle-btn" id="system-btn" title="Set a system prompt, persona and standing instructions for the AI" aria-pressed="false">System</button>
-      <button class="toggle-btn" id="think-btn" title="Extended thinking, model reasons before replying. Requires deepseek-r1, qwen3, etc." aria-pressed="false">Thinking</button>
+      <button class="toggle-btn" id="think-btn" title="Extended thinking: model reasons before replying. Requires a model that supports thinking, such as deepseek-r1, qwen3, etc." aria-pressed="false">Thinking</button>
       <button class="toggle-btn" id="ssh-btn" title="Connect to Ollama on a remote machine via SSH tunnel" aria-pressed="false">SSH</button>
       <button class="toggle-btn" id="settings-btn" title="Adjust generation parameters" aria-pressed="false">Settings</button>
       <button class="toggle-btn" id="diag-btn" title="Show connection diagnostics: Ollama version, loaded models" aria-pressed="false">Diagnostics</button>
@@ -335,7 +335,7 @@ footer{border-top:1px solid var(--border);background:var(--surface);padding:12px
       <input type="number" id="max-tokens" value="2048" min="64" max="32768" step="64">
     </div>
     <div class="setting-group">
-      <label for="ctx-size" title="Context window, how much conversation history the model sees.">Context</label>
+      <label for="ctx-size" title="Context window: how much conversation history the model sees.">Context</label>
       <input type="number" id="ctx-size" value="4096" min="512" max="131072" step="512">
     </div>
     <div class="setting-group">
@@ -468,7 +468,15 @@ function renderMarkdown(text) {
   if (!text) return '';
   const mathBlocks = [], mathInlines = [];
   text = text.replace(/\$\$([\s\S]*?)\$\$/g, (_, m) => { mathBlocks.push(m); return `<span data-kb="${mathBlocks.length-1}"></span>`; });
-  text = text.replace(/\$([^\$\n]+?)\$/g, (_, m) => { mathInlines.push(m); return `<span data-ki="${mathInlines.length-1}"></span>`; });
+  // Inline math: require the content to not start/end with whitespace (standard
+  // Pandoc-style heuristic) and skip pairs that look like plain currency amounts
+  // (e.g. "$100 and $50", purely numeric content with no math-y characters).
+  text = text.replace(/\$([^\$\n]+?)\$/g, (full, m) => {
+    if (/^\s|\s$/.test(m)) return full; // "$ x $" with padding: likely not math
+    if (/^[\d,.]+$/.test(m.trim())) return full; // "$100", plain number, treat as currency
+    mathInlines.push(m);
+    return `<span data-ki="${mathInlines.length-1}"></span>`;
+  });
   let html = marked.parse(text);
   html = DOMPurify.sanitize(html, { ALLOWED_URI_REGEXP: /^https?:/i });
   html = html.replace(/<span data-kb="(\d+)"><\/span>/g, (_, i) => {
@@ -533,12 +541,20 @@ const modalCancel = $id('modal-cancel');
 const modalConf   = $id('modal-confirm');
 
 // ── STATE ──
-let isGenerating = false, thinkEnabled = false, sshEnabled = false;
-let resolvedHost = 'localhost', abortCtrl = null;
-let userScrolledUp = false, isProgrammatic = false, rafPending = false;
-let streamBuf = '', activeId = null, conversations = {}, modalResolve = null;
+let thinkEnabled = false, sshEnabled = false;
+let resolvedHost = 'localhost';
+let userScrolledUp = false, isProgrammatic = false;
+let activeId = null, conversations = {}, modalResolve = null;
 let searchQuery = '';
 const HOSTS = ['localhost', '127.0.0.1'];
+
+// Per-conversation generation tracking, keyed by conversation id.
+// Each entry: { abortCtrl, assistantMsg, msgsBeforeReply, wrap, contentEl, cursor,
+//               thinkBlockEl, thinkBodyEl, thinkLblEl, bubble, tokEl, spdEl,
+//               actsEl, startTime, totalTokens, doneReason, rafPending }
+const activeGenerations = new Map();
+
+function isGeneratingFor(id) { return activeGenerations.has(id); }
 
 const log = {
   warn:  (...a) => console.warn('[ollama-chat]', ...a),
@@ -558,7 +574,56 @@ function safeGet(key, fallback = null) {
 // Per-conversation storage (avoids rewriting entire DB each change)
 function saveConvo(id) { safeSet(`ollama_convo_${id}`, conversations[id]); }
 function loadConvo(id) { return safeGet(`ollama_convo_${id}`, null); }
-function deleteConvoStore(id) { try { localStorage.removeItem(`ollama_convo_${id}`); } catch {} }
+
+// Throttled variant for high-frequency writes (streaming). Guarantees a write
+// happens at most every SAVE_THROTTLE_MS, plus a trailing write so the last
+// chunk is never lost. Use saveConvo() directly for one-off, low-frequency saves.
+const SAVE_THROTTLE_MS = 500;
+const _throttleState = new Map(); // id -> { lastSave, timer }
+function saveConvoThrottled(id) {
+  const now = Date.now();
+  let state = _throttleState.get(id);
+  if (!state) { state = { lastSave: 0, timer: null }; _throttleState.set(id, state); }
+
+  if (now - state.lastSave >= SAVE_THROTTLE_MS) {
+    state.lastSave = now;
+    saveConvo(id);
+    return;
+  }
+  if (!state.timer) {
+    state.timer = setTimeout(() => {
+      state.timer = null;
+      state.lastSave = Date.now();
+      saveConvo(id);
+    }, SAVE_THROTTLE_MS - (now - state.lastSave));
+  }
+}
+function flushSaveThrottle(id) {
+  const state = _throttleState.get(id);
+  if (state?.timer) { clearTimeout(state.timer); state.timer = null; }
+  saveConvo(id);
+  // Once flushed, this entry has no pending work, drop it rather than let it
+  // sit around for the rest of the session. It'll be recreated cheaply if
+  // this conversation streams again.
+  _throttleState.delete(id);
+}
+function deleteConvoStore(id) {
+  const state = _throttleState.get(id);
+  if (state?.timer) clearTimeout(state.timer);
+  _throttleState.delete(id);
+  _heightCache.delete(id);
+  try { localStorage.removeItem(`ollama_convo_${id}`); } catch {}
+}
+
+// Safety net: in case any throttle entries ever survive without a pending
+// timer (e.g. future code paths that skip flushSaveThrottle), periodically
+// sweep out idle entries so the map can't grow unbounded over a long session.
+const THROTTLE_SWEEP_INTERVAL_MS = 5 * 60 * 1000; // every 5 minutes
+setInterval(() => {
+  for (const [id, state] of _throttleState) {
+    if (!state.timer) _throttleState.delete(id);
+  }
+}, THROTTLE_SWEEP_INTERVAL_MS);
 
 function persist() {
   const s = {
@@ -675,21 +740,26 @@ function newConvo() {
   persist();
   renderSidebar();
   renderChat();
+  refreshGenerationUI();
   return id;
 }
 
 function switchConvo(id) {
   if (!conversations[id]) return;
+  if (id === activeId) { renderSidebar(); return; } // already viewing this chat, avoid tearing down a live stream for nothing
   activeId = id;
   userScrolledUp = false;
   persist();
   renderSidebar();
   renderChat();
+  refreshGenerationUI();
 }
 
 async function deleteConvo(id) {
   const ok = await showModal('Delete chat?', `"${conversations[id]?.title || 'This chat'}" will be permanently deleted.`);
   if (!ok) return;
+  const gen = activeGenerations.get(id);
+  if (gen) gen.abortCtrl.abort(); // stop the fetch stream; finally{} block will clean up activeGenerations
   deleteConvoStore(id);
   delete conversations[id];
   const ids = sortedIds();
@@ -698,6 +768,7 @@ async function deleteConvo(id) {
   persist();
   renderSidebar();
   renderChat();
+  refreshGenerationUI();
 }
 
 async function renameConvo(id) {
@@ -717,22 +788,27 @@ function sortedIds() {
   return Object.keys(conversations).sort((a,b) => (conversations[b].updated||0) - (conversations[a].updated||0));
 }
 
-function getMessages() { return conversations[activeId]?.messages || []; }
+function getMessages(id = activeId) { return conversations[id]?.messages || []; }
 
-function setMessages(msgs, partialOk = false) {
-  if (!conversations[activeId]) return;
-  conversations[activeId].messages = msgs;
-  conversations[activeId].updated = Date.now();
+function setMessages(msgs, { partialOk = false, id = activeId } = {}) {
+  if (!conversations[id]) return;
+  conversations[id].messages = msgs;
+  conversations[id].updated = Date.now();
   if (msgs.length > 0) {
     const first = msgs.find(m => m.role === 'user');
-    if (first && conversations[activeId].title === 'New chat') {
-      conversations[activeId].title = first.content.slice(0, 42) + (first.content.length > 42 ? '…' : '');
+    if (first && conversations[id].title === 'New chat') {
+      conversations[id].title = first.content.slice(0, 42) + (first.content.length > 42 ? '…' : '');
     }
   } else {
-    conversations[activeId].title = 'New chat';
+    conversations[id].title = 'New chat';
   }
-  saveConvo(activeId);
-  if (!partialOk) { persist(); renderSidebar(); }
+  if (partialOk) {
+    saveConvoThrottled(id);
+  } else {
+    flushSaveThrottle(id);
+    persist();
+    renderSidebar();
+  }
 }
 
 function escHtml(s) {
@@ -777,41 +853,98 @@ exportBtn.addEventListener('click', () => {
   URL.revokeObjectURL(a.href);
 });
 
+const IMPORT_MAX_FILE_BYTES = 20 * 1024 * 1024; // 20MB raw file cap
+const IMPORT_MAX_CONVOS = 2000;
+const IMPORT_MAX_MESSAGES_PER_CONVO = 5000;
+const IMPORT_MAX_MESSAGE_CHARS = 200000; // ~200k chars per message
+
 importFile.addEventListener('change', async () => {
   const file = importFile.files[0];
   if (!file) return;
+
+  if (file.size > IMPORT_MAX_FILE_BYTES) {
+    await showModal('File too large', `That file is ${(file.size/1024/1024).toFixed(1)}MB. Imports are limited to ${IMPORT_MAX_FILE_BYTES/1024/1024}MB.`, { confirmLabel: 'OK', confirmClass: 'btn' });
+    importFile.value = '';
+    return;
+  }
+
   try {
     const text = await file.text();
     const data = JSON.parse(text);
     if (!data.conversations || typeof data.conversations !== 'object') throw new Error('Invalid format');
-    let imported = 0;
-    for (const [id, c] of Object.entries(data.conversations)) {
-      if (c && Array.isArray(c.messages)) {
-        conversations[id] = c;
-        saveConvo(id);
-        imported++;
+
+    const entries = Object.entries(data.conversations);
+    if (entries.length > IMPORT_MAX_CONVOS) {
+      throw new Error(`File contains ${entries.length} conversations, which exceeds the limit of ${IMPORT_MAX_CONVOS}.`);
+    }
+
+    let imported = 0, skipped = 0;
+    for (const [id, c] of entries) {
+      if (!c || !Array.isArray(c.messages) || typeof id !== 'string' || id.length > 200) { skipped++; continue; }
+      if (c.messages.length > IMPORT_MAX_MESSAGES_PER_CONVO) { skipped++; continue; }
+
+      const cleanMsgs = [];
+      let tooLarge = false;
+      for (const m of c.messages) {
+        if (!m || typeof m.content !== 'string' || (m.role !== 'user' && m.role !== 'assistant')) continue;
+        if (m.content.length > IMPORT_MAX_MESSAGE_CHARS) { tooLarge = true; break; }
+        cleanMsgs.push({
+          role: m.role,
+          content: m.content,
+          ts: typeof m.ts === 'number' ? m.ts : Date.now(),
+          think: typeof m.think === 'string' ? m.think.slice(0, IMPORT_MAX_MESSAGE_CHARS) : undefined,
+          tokens: typeof m.tokens === 'number' ? m.tokens : undefined,
+          tps: typeof m.tps === 'number' ? m.tps : undefined,
+          truncated: m.truncated === true ? true : undefined,
+        });
       }
+      if (tooLarge) { skipped++; continue; }
+
+      conversations[id] = {
+        id,
+        title: typeof c.title === 'string' ? c.title.slice(0, 200) : 'Imported chat',
+        messages: cleanMsgs,
+        created: typeof c.created === 'number' ? c.created : Date.now(),
+        updated: typeof c.updated === 'number' ? c.updated : Date.now(),
+      };
+      saveConvo(id);
+      imported++;
     }
     persist();
     renderSidebar();
-    await showModal('Import complete', `${imported} conversation${imported !== 1 ? 's' : ''} imported.`, { confirmLabel: 'OK', confirmClass: 'btn' });
+    const summary = skipped > 0
+      ? `${imported} conversation${imported !== 1 ? 's' : ''} imported, ${skipped} skipped (invalid or too large).`
+      : `${imported} conversation${imported !== 1 ? 's' : ''} imported.`;
+    await showModal('Import complete', summary, { confirmLabel: 'OK', confirmClass: 'btn' });
   } catch(e) {
     log.error('Import failed:', e);
-    await showModal('Import failed', 'The file could not be read. Make sure it is a valid export file.', { confirmLabel: 'OK', confirmClass: 'btn' });
+    await showModal('Import failed', e.message && e.message.includes('exceeds') ? e.message : 'The file could not be read. Make sure it is a valid export file.', { confirmLabel: 'OK', confirmClass: 'btn' });
   }
   importFile.value = '';
 });
 
 // ── STATUS ──
+let lastConnectionState = ''; // last real connection state: 'connected' | 'error' | '' (unknown)
+let lastConnectionLabel = '';
+
 function setStatus(state, label) {
   statusDot.className = 'status-dot ' + state;
   statusTxt.textContent = label;
+  // Remember real connection outcomes (not transient 'loading') so we can restore
+  // them later, e.g. after clearing a chat, without falsely claiming "connected".
+  if (state === 'connected' || state === 'error') {
+    lastConnectionState = state;
+    lastConnectionLabel = label;
+  }
+}
+
+function restoreLastConnectionStatus() {
+  setStatus(lastConnectionState, lastConnectionLabel || (lastConnectionState ? lastConnectionState : 'connecting…'));
 }
 
 // ── DIAGNOSTICS ──
 async function loadDiagnostics() {
-  const port = sshEnabled ? (sshLocPort.value || 11434) : (portInput.value || 11434);
-  const base = `http://localhost:${port}`;
+  const base = getBaseUrl();
   try {
     const [vRes, psRes] = await Promise.all([
       fetch(`${base}/api/version`).catch(() => null),
@@ -823,7 +956,7 @@ async function loadDiagnostics() {
     $id('diag-version').textContent = ver || '-';
     $id('diag-models').textContent = models;
     $id('diag-host').textContent = resolvedHost;
-    $id('diag-port').textContent = port;
+    $id('diag-port').textContent = sshEnabled ? getValidPort(sshLocPort.value) : getValidPort(portInput.value);
   } catch(e) {
     log.warn('Diagnostics fetch failed:', e);
     $id('diag-version').textContent = 'unavailable';
@@ -833,8 +966,14 @@ async function loadDiagnostics() {
 
 // ── MODELS ──
 async function loadModels(preferred) {
+  const rawPort = sshEnabled ? sshLocPort.value : portInput.value;
+  if (!isPortValid(rawPort)) {
+    modelSel.innerHTML = '<option value="">invalid port</option>';
+    setStatus('error', `invalid port: "${rawPort}"`);
+    return;
+  }
   setStatus('loading', 'connecting…');
-  const port = sshEnabled ? (sshLocPort.value||11434) : (portInput.value||11434);
+  const port = sshEnabled ? getValidPort(sshLocPort.value) : getValidPort(portInput.value);
   const hosts = sshEnabled ? ['localhost'] : HOSTS;
   for (const host of hosts) {
     try {
@@ -866,9 +1005,22 @@ async function loadModels(preferred) {
   setStatus('error', 'offline');
 }
 
+function getValidPort(rawValue, fallback = 11434) {
+  const n = parseInt(rawValue, 10);
+  return (Number.isInteger(n) && n >= 1 && n <= 65535) ? n : fallback;
+}
+
+// Strict check with no fallback, used to decide whether to fetch at all,
+// as opposed to getValidPort() which clamps to a default for URL-building.
+function isPortValid(rawValue) {
+  const n = parseInt(rawValue, 10);
+  return Number.isInteger(n) && n >= 1 && n <= 65535 && String(n) === String(rawValue).trim();
+}
+
 function getBaseUrl() {
-  const port = sshEnabled ? (sshLocPort.value||11434) : (portInput.value||11434);
-  return `http://localhost:${port}`;
+  const port = sshEnabled ? getValidPort(sshLocPort.value) : getValidPort(portInput.value);
+  const host = sshEnabled ? 'localhost' : resolvedHost;
+  return `http://${host}:${port}`;
 }
 
 // ── SCROLL ──
@@ -884,11 +1036,69 @@ function scrollToBottom(force = false) {
   requestAnimationFrame(() => { isProgrammatic = false; });
 }
 
+// Estimates the pixel height of the messages hidden above the virtual window.
+// Flat per-message constants are wildly wrong once messages vary from a one-line
+// reply to a multi-paragraph response with code blocks, so this scales by content
+// length instead, still an approximation, but tracks actual variance much better.
+function estimateMessageHeight(msg) {
+  const BASE = 56; // meta row + bubble padding + action row
+  const CHARS_PER_LINE = msg.role === 'user' ? 60 : 90; // user bubbles are narrower
+  const LINE_HEIGHT = 23;
+  const lines = Math.max(1, Math.ceil((msg.content?.length || 0) / CHARS_PER_LINE));
+  const codeBlockCount = (msg.content?.match(/```/g)?.length || 0) / 2;
+  const codeBlockExtra = codeBlockCount * 40; // padding/border/copy-button chrome per block
+  return BASE + lines * LINE_HEIGHT + codeBlockExtra;
+}
+
+// Cache of cumulative prefix-sum heights per conversation, so repeated renders
+// of a long chat don't re-walk and re-regex every hidden message each time.
+// cache entry: { msgsRef, prefix: number[] } where prefix[i] = sum of heights for msgs[0..i)
+const _heightCache = new Map(); // convoId -> cache entry
+const HEIGHT_AVG_FALLBACK_THRESHOLD = 1000; // beyond this many hidden messages, use a flat average instead of exact per-message sums
+
+function estimateHiddenHeight(msgs, start, convoId = activeId) {
+  if (start <= 0) return 0;
+
+  // Once there are a lot of hidden messages, exact per-message precision doesn't
+  // matter for a scroll spacer, sample a chunk and extrapolate instead of
+  // walking (and regexing) thousands of messages on every render.
+  if (start > HEIGHT_AVG_FALLBACK_THRESHOLD) {
+    const sampleSize = 200;
+    let sampleTotal = 0;
+    for (let i = 0; i < sampleSize; i++) sampleTotal += estimateMessageHeight(msgs[i]);
+    return Math.round((sampleTotal / sampleSize) * start);
+  }
+
+  let cache = _heightCache.get(convoId);
+  // Invalidate cache if it's stale relative to the current messages array
+  // (e.g. messages were edited/deleted, changing earlier entries).
+  if (!cache || cache.msgsRef !== msgs) {
+    cache = { msgsRef: msgs, prefix: [0] };
+    _heightCache.set(convoId, cache);
+  }
+
+  // Extend the cached prefix sum up to `start` if it doesn't reach that far yet.
+  while (cache.prefix.length <= start) {
+    const i = cache.prefix.length - 1;
+    cache.prefix.push(cache.prefix[i] + estimateMessageHeight(msgs[i]));
+  }
+
+  return Math.round(cache.prefix[start]);
+}
+
 // ── RENDER CHAT (with virtual windowing) ──
 function renderChat() {
   chatEl.innerHTML = '';
-  const msgs = getMessages();
-  if (!msgs.length) {
+  const gen = activeGenerations.get(activeId);
+  // While a generation is in flight, its partial assistant message is saved into
+  // conversations[].messages on every chunk for persistence, exclude it from the
+  // static list here since attachLiveGeneration() renders it as a live bubble instead.
+  let msgs = getMessages();
+  if (gen && msgs.length && msgs[msgs.length - 1]?._pending) {
+    msgs = msgs.slice(0, -1);
+  }
+
+  if (!msgs.length && !gen) {
     chatEl.appendChild(emptyState);
     emptyState.style.display = 'flex';
     return;
@@ -902,7 +1112,7 @@ function renderChat() {
   if (start > 0) {
     const spacer = document.createElement('div');
     spacer.className = 'virtual-spacer';
-    spacer.style.height = `${start * 80}px`; // rough estimate
+    spacer.style.height = `${estimateHiddenHeight(msgs, start)}px`;
     const note = document.createElement('p');
     note.style.cssText = 'text-align:center;color:var(--text-dim);font-size:12px;padding:12px';
     note.textContent = `Showing last ${VIRTUAL_WINDOW} of ${total} messages.`;
@@ -913,7 +1123,67 @@ function renderChat() {
   const frag = document.createDocumentFragment();
   visible.forEach((msg, i) => frag.appendChild(buildMsgEl(msg, start + i)));
   chatEl.appendChild(frag);
+
+  // If this chat has a generation in flight, attach (or re-attach) live DOM
+  // so streaming continues to update visibly instead of appearing frozen.
+  if (gen) attachLiveGeneration(gen);
+
   scrollToBottom(true);
+}
+
+// Builds (or rebuilds) the streaming message DOM for an in-progress generation
+// and wires it into `gen` so scheduleUpdate() inside sendFromIndex can keep using it.
+function attachLiveGeneration(gen) {
+  if (gen.loadWrap === null && gen.wrap === null) {
+    // Generation hasn't received any content yet, show thinking dots.
+    gen.loadWrap = document.createElement('div');
+    gen.loadWrap.className = 'msg-wrapper assistant';
+    const dots = document.createElement('div'); dots.className='thinking'; dots.innerHTML='<span></span><span></span><span></span>';
+    gen.loadWrap.appendChild(dots);
+    chatEl.appendChild(gen.loadWrap);
+    return;
+  }
+
+  // Rebuild the streaming bubble from gen.assistantMsg's current state.
+  gen.wrap = document.createElement('div'); gen.wrap.className='msg-wrapper assistant'; gen.wrap.setAttribute('role','article');
+  const meta = document.createElement('div'); meta.className='msg-meta';
+  const lbl = document.createElement('span'); lbl.className='role-label'; lbl.textContent=modelSel.value||'Assistant';
+  const tsEl = document.createElement('span'); tsEl.className='msg-timestamp'; tsEl.textContent=new Date(gen.assistantMsg.ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  gen.tokEl = document.createElement('span'); gen.tokEl.className='msg-tokens';
+  gen.spdEl = document.createElement('span'); gen.spdEl.className='msg-speed';
+  if (gen.totalTokens > 0) {
+    const tps = (gen.totalTokens / ((Date.now()-gen.startTime)/1000)).toFixed(1);
+    gen.tokEl.textContent = gen.totalTokens+' tok'; gen.spdEl.textContent = tps+' tok/s';
+  }
+  meta.append(lbl, tsEl, gen.tokEl, gen.spdEl);
+
+  gen.bubble = document.createElement('div'); gen.bubble.className='msg-bubble prose';
+  gen.bubble.style.cssText='padding:0;border:none;background:transparent;max-width:100%';
+
+  if (gen.assistantMsg.think) {
+    gen.thinkBlockEl = document.createElement('div'); gen.thinkBlockEl.className='think-block collapsed';
+    const h=document.createElement('div'); h.className='think-header'; h.setAttribute('role','button'); h.setAttribute('aria-expanded','false'); h.setAttribute('tabindex','0');
+    gen.thinkLblEl=document.createElement('span'); gen.thinkLblEl.className='think-label'; gen.thinkLblEl.textContent='Thinking…';
+    const ch=document.createElement('span'); ch.className='think-chevron'; ch.textContent='▾'; ch.setAttribute('aria-hidden','true');
+    h.append(gen.thinkLblEl,ch);
+    h.addEventListener('click',()=>{ const c=gen.thinkBlockEl.classList.toggle('collapsed'); h.setAttribute('aria-expanded',String(!c)); });
+    h.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();h.click();}});
+    gen.thinkBodyEl=document.createElement('div'); gen.thinkBodyEl.className='think-body prose';
+    gen.thinkBodyEl.innerHTML = renderMarkdown(gen.assistantMsg.think);
+    gen.thinkBlockEl.append(h,gen.thinkBodyEl);
+    gen.bubble.appendChild(gen.thinkBlockEl);
+  } else {
+    gen.thinkBlockEl = null; gen.thinkBodyEl = null; gen.thinkLblEl = null;
+  }
+
+  gen.contentEl = document.createElement('div');
+  gen.contentEl.innerHTML = renderMarkdown(gen.assistantMsg.content);
+  gen.cursor = document.createElement('span'); gen.cursor.className='streaming-cursor'; gen.cursor.setAttribute('aria-hidden','true');
+  gen.contentEl.appendChild(gen.cursor);
+  gen.bubble.appendChild(gen.contentEl);
+  gen.actsEl = document.createElement('div'); gen.actsEl.className='msg-actions';
+  gen.wrap.append(meta, gen.bubble, gen.actsEl);
+  chatEl.appendChild(gen.wrap);
 }
 
 function buildMsgEl(msg, index) {
@@ -943,9 +1213,17 @@ function buildMsgEl(msg, index) {
     bubble.classList.add('prose');
     bubble.style.cssText = 'padding:0;border:none;background:transparent;max-width:100%';
     if (msg.think) bubble.appendChild(buildThinkBlock(msg.think, false));
-    const cd = document.createElement('div');
-    cd.innerHTML = renderMarkdown(msg.content);
-    bubble.appendChild(cd);
+    if (msg.content) {
+      const cd = document.createElement('div');
+      cd.innerHTML = renderMarkdown(msg.content);
+      bubble.appendChild(cd);
+    } else if (msg.stopped) {
+      const placeholder = document.createElement('div');
+      placeholder.style.cssText = 'color:var(--text-dim);font-style:italic;font-size:13px';
+      placeholder.textContent = 'No reply text, stopped before the response started.';
+      bubble.appendChild(placeholder);
+    }
+    if (msg.stopped) bubble.appendChild(buildStoppedNotice());
     if (msg.truncated) bubble.appendChild(buildTruncationNotice());
   } else {
     bubble.textContent = msg.content;
@@ -960,6 +1238,10 @@ function buildMsgEl(msg, index) {
   });
   acts.appendChild(copyBtn);
   acts.appendChild(makeBtn('Delete', async () => {
+    if (isGeneratingFor(activeId)) {
+      await showModal('Can\'t delete right now', 'A response is still generating in this chat. Stop it first, then delete messages.', { confirmLabel: 'OK', confirmClass: 'btn' });
+      return;
+    }
     const ok = await showModal('Delete message?', 'This message will be permanently removed.');
     if (!ok) return;
     setMessages(getMessages().filter((_,i) => i !== index));
@@ -992,6 +1274,13 @@ function buildTruncationNotice() {
   return notice;
 }
 
+function buildStoppedNotice() {
+  const notice = document.createElement('div');
+  notice.className = 'truncation-notice';
+  notice.textContent = 'Generation stopped before finishing.';
+  return notice;
+}
+
 function buildThinkBlock(content, isStreaming) {
   const block = document.createElement('div');
   block.className = 'think-block collapsed';
@@ -1011,6 +1300,10 @@ function buildThinkBlock(content, isStreaming) {
 // ── EDIT ──
 function startEdit(wrap, index) {
   if (wrap.querySelector('.edit-area')) return;
+  if (isGeneratingFor(activeId)) {
+    showModal('Can\'t edit right now', 'A response is still generating in this chat. Stop it first, then edit your message.', { confirmLabel: 'OK', confirmClass: 'btn' });
+    return;
+  }
   const bubble = wrap.querySelector('.msg-bubble');
   bubble.style.display = 'none';
   const msgs = getMessages();
@@ -1019,9 +1312,13 @@ function startEdit(wrap, index) {
   const ctrl = document.createElement('div'); ctrl.className = 'edit-controls';
   const sBtn = document.createElement('button'); sBtn.className='btn'; sBtn.textContent='Send';
   sBtn.addEventListener('click', () => {
+    if (isGeneratingFor(activeId)) {
+      showModal('Can\'t send right now', 'A response is still generating in this chat. Stop it first, then try again.', { confirmLabel: 'OK', confirmClass: 'btn' });
+      return;
+    }
     const txt = ta.value.trim(); if (!txt) return;
     const up = msgs.slice(0, index); up.push({ role:'user', content:txt, ts:Date.now() });
-    setMessages(up); renderChat(); sendFromIndex(up.length - 1);
+    setMessages(up); renderChat(); sendFromIndex(up.length - 1, activeId);
   });
   const cBtn = document.createElement('button'); cBtn.className='btn secondary'; cBtn.textContent='Cancel';
   cBtn.addEventListener('click', () => { ta.remove(); ctrl.remove(); bubble.style.display=''; });
@@ -1030,47 +1327,75 @@ function startEdit(wrap, index) {
 
 // ── REGENERATE ──
 function regenerate(index) {
-  if (isGenerating) return;
+  if (isGeneratingFor(activeId)) return;
   const msgs = getMessages(); const trimmed = msgs.slice(0, index);
-  setMessages(trimmed); renderChat(); sendFromIndex(trimmed.length - 1);
+  setMessages(trimmed); renderChat(); sendFromIndex(trimmed.length - 1, activeId);
 }
 
 // ── GENERATION ──
-function setGenerating(val) {
-  isGenerating = val;
-  sendBtn.style.display = val ? 'none' : 'flex';
-  stopBtn.style.display  = val ? 'flex'  : 'none';
-  sendBtn.disabled = val;
+// Updates Send/Stop button visibility based on whether the *active* chat is generating,
+// and disables Send when the relevant port field is invalid.
+function refreshGenerationUI() {
+  const genActive = isGeneratingFor(activeId);
+  const rawPort = sshEnabled ? sshLocPort.value : portInput.value;
+  const portOk = isPortValid(rawPort);
+  sendBtn.style.display = genActive ? 'none' : 'flex';
+  stopBtn.style.display  = genActive ? 'flex'  : 'none';
+  sendBtn.disabled = genActive || !portOk;
+  sendBtn.title = !portOk ? `Can't send, "${rawPort}" isn't a valid port` : 'Send (Enter)';
 }
 
-async function sendFromIndex(fromIndex) {
-  if (isGenerating) return;
-  if (!activeId) newConvo();
-  setGenerating(true);
+async function sendFromIndex(fromIndex, convoId = activeId) {
+  if (isGeneratingFor(convoId)) return;
+  const rawPort = sshEnabled ? sshLocPort.value : portInput.value;
+  if (!isPortValid(rawPort)) {
+    await showModal('Invalid port', `"${rawPort}" isn't a valid port number (1–65535). Fix the Port field before continuing.`, { confirmLabel: 'OK', confirmClass: 'btn' });
+    (sshEnabled ? sshLocPort : portInput).focus();
+    return;
+  }
+  if (!convoId) convoId = newConvo();
+  refreshGenerationUI();
 
-  const msgs = getMessages();
+  const msgs = getMessages(convoId);
   const apiMsgs = [];
   const sysText = sysPmt.value.trim();
   if (sysText) apiMsgs.push({ role:'system', content:sysText });
   msgs.slice(0, fromIndex+1).forEach(m => apiMsgs.push({ role:m.role, content:m.content }));
 
-  abortCtrl = new AbortController();
+  const gen = {
+    id: convoId + ':' + Date.now(),
+    abortCtrl: new AbortController(),
+    assistantMsg: { role:'assistant', content:'', think:'', ts:Date.now(), tokens:0, tps:0, _pending:true },
+    startTime: Date.now(),
+    totalTokens: 0,
+    doneReason: null,
+    rafPending: false,
+    // DOM refs, only meaningful while convoId === activeId; created lazily below
+    loadWrap: null, wrap: null, bubble: null, contentEl: null, cursor: null,
+    thinkBlockEl: null, thinkBodyEl: null, thinkLblEl: null,
+    tokEl: null, spdEl: null, actsEl: null,
+  };
+  activeGenerations.set(convoId, gen);
 
-  const loadWrap = document.createElement('div');
-  loadWrap.className = 'msg-wrapper assistant';
-  const dots = document.createElement('div'); dots.className='thinking'; dots.innerHTML='<span></span><span></span><span></span>';
-  loadWrap.appendChild(dots);
-  if (emptyState.parentNode === chatEl) emptyState.remove();
-  chatEl.appendChild(loadWrap);
-  scrollToBottom(true);
+  const isVisible = () => convoId === activeId;
 
-  const assistantMsg = { role:'assistant', content:'', think:'', ts:Date.now(), tokens:0, tps:0 };
-  const startTime = Date.now();
+  if (isVisible()) {
+    gen.loadWrap = document.createElement('div');
+    gen.loadWrap.className = 'msg-wrapper assistant';
+    const dots = document.createElement('div'); dots.className='thinking'; dots.innerHTML='<span></span><span></span><span></span>';
+    gen.loadWrap.appendChild(dots);
+    if (emptyState.parentNode === chatEl) emptyState.remove();
+    chatEl.appendChild(gen.loadWrap);
+    scrollToBottom(true);
+  }
+  refreshGenerationUI();
+
+  const modelNameAtSend = modelSel.value;
 
   try {
     const seedVal = parseInt(seedEl.value);
     const body = {
-      model: modelSel.value, messages: apiMsgs, stream: true,
+      model: modelNameAtSend, messages: apiMsgs, stream: true,
       think: thinkEnabled, keep_alive: kaEl.value,
       options: {
         num_predict: parseInt(maxTokEl.value)||2048,
@@ -1083,48 +1408,60 @@ async function sendFromIndex(fromIndex) {
 
     const res = await fetch(`${getBaseUrl()}/api/chat`, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(body), signal:abortCtrl.signal,
+      body:JSON.stringify(body), signal:gen.abortCtrl.signal,
     });
     if (!res.ok) { const t = await res.text().catch(()=>''); throw new Error(`HTTP ${res.status}${t?': '+t.slice(0,200):''}`); }
 
-    loadWrap.remove();
+    if (isVisible() && gen.loadWrap?.parentNode) gen.loadWrap.remove();
 
-    const wrap = document.createElement('div'); wrap.className='msg-wrapper assistant'; wrap.setAttribute('role','article');
-    const meta = document.createElement('div'); meta.className='msg-meta';
-    const lbl = document.createElement('span'); lbl.className='role-label'; lbl.textContent=modelSel.value||'Assistant';
-    const tsEl = document.createElement('span'); tsEl.className='msg-timestamp'; tsEl.textContent=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-    const tokEl = document.createElement('span'); tokEl.className='msg-tokens';
-    const spdEl = document.createElement('span'); spdEl.className='msg-speed';
-    meta.append(lbl, tsEl, tokEl, spdEl);
+    if (isVisible()) {
+      gen.wrap = document.createElement('div'); gen.wrap.className='msg-wrapper assistant'; gen.wrap.setAttribute('role','article');
+      const meta = document.createElement('div'); meta.className='msg-meta';
+      const lbl = document.createElement('span'); lbl.className='role-label'; lbl.textContent=modelNameAtSend||'Assistant';
+      const tsEl = document.createElement('span'); tsEl.className='msg-timestamp'; tsEl.textContent=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+      gen.tokEl = document.createElement('span'); gen.tokEl.className='msg-tokens';
+      gen.spdEl = document.createElement('span'); gen.spdEl.className='msg-speed';
+      meta.append(lbl, tsEl, gen.tokEl, gen.spdEl);
 
-    const bubble = document.createElement('div'); bubble.className='msg-bubble prose';
-    bubble.style.cssText='padding:0;border:none;background:transparent;max-width:100%';
-    let thinkBlockEl=null, thinkBodyEl=null, thinkLblEl=null;
-    const contentEl = document.createElement('div');
-    const cursor = document.createElement('span'); cursor.className='streaming-cursor'; cursor.setAttribute('aria-hidden','true');
-    contentEl.appendChild(cursor);
-    bubble.appendChild(contentEl);
-    const actsEl = document.createElement('div'); actsEl.className='msg-actions';
-    wrap.append(meta, bubble, actsEl);
-    chatEl.appendChild(wrap);
-    scrollToBottom(true);
+      gen.bubble = document.createElement('div'); gen.bubble.className='msg-bubble prose';
+      gen.bubble.style.cssText='padding:0;border:none;background:transparent;max-width:100%';
+      gen.contentEl = document.createElement('div');
+      gen.cursor = document.createElement('span'); gen.cursor.className='streaming-cursor'; gen.cursor.setAttribute('aria-hidden','true');
+      gen.contentEl.appendChild(gen.cursor);
+      gen.bubble.appendChild(gen.contentEl);
+      gen.actsEl = document.createElement('div'); gen.actsEl.className='msg-actions';
+      gen.wrap.append(meta, gen.bubble, gen.actsEl);
+      chatEl.appendChild(gen.wrap);
+      scrollToBottom(true);
+    }
 
     const reader = res.body.getReader(); const decoder = new TextDecoder();
-    streamBuf = ''; let totalTokens = 0; let doneReason = null;
+    let localStreamBuf = '';
+
+    let lastRenderedContent = '';
+    let lastRenderedThink = '';
 
     const scheduleUpdate = () => {
-      if (rafPending) return;
-      rafPending = true;
+      if (!isVisible() || gen.rafPending) return;
+      gen.rafPending = true;
       requestAnimationFrame(() => {
-        rafPending = false;
+        gen.rafPending = false;
+        if (!isVisible()) return; // user switched away before frame fired
         if (!shouldRerender()) return;
-        if (thinkBodyEl) thinkBodyEl.innerHTML = renderMarkdown(assistantMsg.think);
-        cursor.remove();
-        contentEl.innerHTML = renderMarkdown(assistantMsg.content);
-        contentEl.appendChild(cursor);
-        if (totalTokens > 0) {
-          const tps = (totalTokens / ((Date.now()-startTime)/1000)).toFixed(1);
-          tokEl.textContent = totalTokens+' tok'; spdEl.textContent = tps+' tok/s';
+
+        if (gen.thinkBodyEl && gen.assistantMsg.think !== lastRenderedThink) {
+          gen.thinkBodyEl.innerHTML = renderMarkdown(gen.assistantMsg.think);
+          lastRenderedThink = gen.assistantMsg.think;
+        }
+        if (gen.assistantMsg.content !== lastRenderedContent) {
+          gen.cursor?.remove();
+          gen.contentEl.innerHTML = renderMarkdown(gen.assistantMsg.content);
+          gen.contentEl.appendChild(gen.cursor);
+          lastRenderedContent = gen.assistantMsg.content;
+        }
+        if (gen.totalTokens > 0) {
+          const tps = (gen.totalTokens / ((Date.now()-gen.startTime)/1000)).toFixed(1);
+          gen.tokEl.textContent = gen.totalTokens+' tok'; gen.spdEl.textContent = tps+' tok/s';
         }
         scrollToBottom();
       });
@@ -1132,95 +1469,112 @@ async function sendFromIndex(fromIndex) {
 
     while (true) {
       const { done, value } = await reader.read(); if (done) break;
-      streamBuf += decoder.decode(value, { stream:true });
-      if (assistantMsg.content) setMessages([...msgs, {...assistantMsg}], true);
+      localStreamBuf += decoder.decode(value, { stream:true });
+      if (gen.assistantMsg.content) setMessages([...msgs, {...gen.assistantMsg}], { partialOk:true, id:convoId });
       let nl;
-      while ((nl = streamBuf.indexOf('\n')) !== -1) {
-        const line = streamBuf.slice(0, nl).trim(); streamBuf = streamBuf.slice(nl+1);
+      while ((nl = localStreamBuf.indexOf('\n')) !== -1) {
+        const line = localStreamBuf.slice(0, nl).trim(); localStreamBuf = localStreamBuf.slice(nl+1);
         if (!line) continue;
         try {
           const data = JSON.parse(line);
           if (data.message?.thinking) {
-            assistantMsg.think += data.message.thinking;
-            if (!thinkBlockEl) {
-              thinkBlockEl = document.createElement('div'); thinkBlockEl.className='think-block collapsed';
+            gen.assistantMsg.think += data.message.thinking;
+            if (isVisible() && !gen.thinkBlockEl) {
+              gen.thinkBlockEl = document.createElement('div'); gen.thinkBlockEl.className='think-block collapsed';
               const h=document.createElement('div'); h.className='think-header'; h.setAttribute('role','button'); h.setAttribute('aria-expanded','false'); h.setAttribute('tabindex','0');
-              thinkLblEl=document.createElement('span'); thinkLblEl.className='think-label'; thinkLblEl.textContent='Thinking…';
+              gen.thinkLblEl=document.createElement('span'); gen.thinkLblEl.className='think-label'; gen.thinkLblEl.textContent='Thinking…';
               const ch=document.createElement('span'); ch.className='think-chevron'; ch.textContent='▾'; ch.setAttribute('aria-hidden','true');
-              h.append(thinkLblEl,ch);
-              h.addEventListener('click',()=>{ const c=thinkBlockEl.classList.toggle('collapsed'); h.setAttribute('aria-expanded',String(!c)); });
+              h.append(gen.thinkLblEl,ch);
+              h.addEventListener('click',()=>{ const c=gen.thinkBlockEl.classList.toggle('collapsed'); h.setAttribute('aria-expanded',String(!c)); });
               h.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();h.click();}});
-              thinkBodyEl=document.createElement('div'); thinkBodyEl.className='think-body prose';
-              thinkBlockEl.append(h,thinkBodyEl); bubble.insertBefore(thinkBlockEl,contentEl);
+              gen.thinkBodyEl=document.createElement('div'); gen.thinkBodyEl.className='think-body prose';
+              gen.thinkBlockEl.append(h,gen.thinkBodyEl); gen.bubble.insertBefore(gen.thinkBlockEl,gen.contentEl);
             }
           }
           if (data.message?.content) {
-            if (thinkLblEl) thinkLblEl.textContent='Thinking';
-            assistantMsg.content += data.message.content;
+            if (gen.thinkLblEl) gen.thinkLblEl.textContent='Thinking';
+            gen.assistantMsg.content += data.message.content;
           }
-          if (data.eval_count) totalTokens = data.eval_count;
-          if (data.done_reason) doneReason = data.done_reason;
+          if (data.eval_count) gen.totalTokens = data.eval_count;
+          if (data.done_reason) gen.doneReason = data.done_reason;
           scheduleUpdate();
         } catch(e) { log.warn('stream parse error:', e.message); }
       }
     }
 
-    cursor.remove();
-    if (thinkBodyEl) thinkBodyEl.innerHTML = renderMarkdown(assistantMsg.think);
-    contentEl.innerHTML = renderMarkdown(assistantMsg.content);
-    const elapsed = (Date.now()-startTime)/1000;
-    assistantMsg.tokens = totalTokens;
-    assistantMsg.tps = totalTokens > 0 ? parseFloat((totalTokens/elapsed).toFixed(1)) : 0;
-    if (totalTokens > 0) { tokEl.textContent=totalTokens+' tok'; spdEl.textContent=assistantMsg.tps+' tok/s'; }
+    const elapsed = (Date.now()-gen.startTime)/1000;
+    gen.assistantMsg.tokens = gen.totalTokens;
+    gen.assistantMsg.tps = gen.totalTokens > 0 ? parseFloat((gen.totalTokens/elapsed).toFixed(1)) : 0;
+    if (gen.doneReason === 'length') gen.assistantMsg.truncated = true;
+    delete gen.assistantMsg._pending;
 
-    if (doneReason === 'length') {
-      assistantMsg.truncated = true;
-      bubble.appendChild(buildTruncationNotice());
+    if (isVisible()) {
+      gen.cursor?.remove();
+      if (gen.thinkBodyEl) gen.thinkBodyEl.innerHTML = renderMarkdown(gen.assistantMsg.think);
+      gen.contentEl.innerHTML = renderMarkdown(gen.assistantMsg.content);
+      if (gen.totalTokens > 0) { gen.tokEl.textContent=gen.totalTokens+' tok'; gen.spdEl.textContent=gen.assistantMsg.tps+' tok/s'; }
+      if (gen.assistantMsg.truncated) gen.bubble.appendChild(buildTruncationNotice());
+
+      const finalMsg = gen.assistantMsg;
+      const regenBtn = makeBtn('Regenerate', () => { const idx=getMessages().findIndex(m=>m===finalMsg); if(idx>=0) regenerate(idx); });
+      const cp2 = makeBtn('Copy', () => { navigator.clipboard.writeText(finalMsg.content).then(()=>{cp2.textContent='Copied!';setTimeout(()=>cp2.textContent='Copy',1500);}).catch(e=>log.warn(e)); });
+      const del2 = makeBtn('Delete', async () => {
+        const ok = await showModal('Delete message?','This message will be permanently removed.');
+        if(!ok) return;
+        const ms=getMessages(); const idx=ms.indexOf(finalMsg); if(idx>=0){setMessages(ms.filter((_,i)=>i!==idx));renderChat();}
+      });
+      gen.actsEl.append(regenBtn, cp2, del2);
     }
 
-    const regenBtn = makeBtn('Regenerate', () => { const idx=getMessages().findIndex(m=>m===assistantMsg); if(idx>=0) regenerate(idx); });
-    const cp2 = makeBtn('Copy', () => { navigator.clipboard.writeText(assistantMsg.content).then(()=>{cp2.textContent='Copied!';setTimeout(()=>cp2.textContent='Copy',1500);}).catch(e=>log.warn(e)); });
-    const del2 = makeBtn('Delete', async () => {
-      const ok = await showModal('Delete message?','This message will be permanently removed.');
-      if(!ok) return;
-      const ms=getMessages(); const idx=ms.indexOf(assistantMsg); if(idx>=0){setMessages(ms.filter((_,i)=>i!==idx));renderChat();}
-    });
-    actsEl.append(regenBtn, cp2, del2);
-    setMessages([...msgs, assistantMsg]);
+    setMessages([...msgs, gen.assistantMsg], { id: convoId });
 
   } catch(err) {
-    if (loadWrap.parentNode) loadWrap.remove();
+    if (isVisible() && gen.loadWrap?.parentNode) gen.loadWrap.remove();
     if (err.name === 'AbortError') {
-      if (assistantMsg.content || assistantMsg.think) {
-        assistantMsg.content += assistantMsg.content ? '\n\n*(generation stopped)*' : '*(generation stopped)*';
-        setMessages([...msgs, assistantMsg]);
-        renderChat();
+      if (gen.assistantMsg.content || gen.assistantMsg.think) {
+        gen.assistantMsg.stopped = true;
+        delete gen.assistantMsg._pending;
+        setMessages([...msgs, gen.assistantMsg], { id: convoId });
+        if (isVisible()) renderChat();
       }
     } else {
       log.error('Generation error:', err);
-      const ew = document.createElement('div'); ew.className='msg-wrapper assistant';
-      const ed = document.createElement('div'); ed.className='error-msg';
-      ed.textContent = err.message.includes('fetch') ? 'Cannot reach Ollama, is it running?' : err.message;
-      const rb = document.createElement('button'); rb.className='retry-btn'; rb.textContent='Retry';
-      rb.addEventListener('click', () => { ew.remove(); sendFromIndex(fromIndex); });
-      ew.append(ed, rb); chatEl.appendChild(ew); scrollToBottom(); setStatus('error','error');
+      if (isVisible()) {
+        const ew = document.createElement('div'); ew.className='msg-wrapper assistant';
+        const ed = document.createElement('div'); ed.className='error-msg';
+        ed.textContent = err.message.includes('fetch') ? 'Cannot reach Ollama, is it running?' : err.message;
+        const rb = document.createElement('button'); rb.className='retry-btn'; rb.textContent='Retry';
+        rb.addEventListener('click', () => { ew.remove(); sendFromIndex(fromIndex, convoId); });
+        ew.append(ed, rb); chatEl.appendChild(ew); scrollToBottom(); setStatus('error','error');
+      } else {
+        log.warn(`Generation failed in background chat ${convoId}:`, err.message);
+      }
     }
   } finally {
-    setGenerating(false); abortCtrl = null; rafPending = false;
+    activeGenerations.delete(convoId);
+    refreshGenerationUI();
   }
 }
 
 async function sendMessage() {
-  const text = msgInput.value.trim(); if (!text || isGenerating) return;
+  const text = msgInput.value.trim(); if (!text) return;
+  if (isGeneratingFor(activeId)) return; // active chat is already generating, block double-send
+  const rawPort = sshEnabled ? sshLocPort.value : portInput.value;
+  if (!isPortValid(rawPort)) {
+    await showModal('Invalid port', `"${rawPort}" isn't a valid port number (1–65535). Fix the Port field before sending.`, { confirmLabel: 'OK', confirmClass: 'btn' });
+    (sshEnabled ? sshLocPort : portInput).focus();
+    return;
+  }
   msgInput.value = ''; msgInput.style.height = 'auto';
   if (!activeId) newConvo();
-  const msgs = getMessages();
+  const convoId = activeId; // capture now, safe even if user switches chats mid-send
+  const msgs = getMessages(convoId);
   const userMsg = { role:'user', content:text, ts:Date.now() };
-  setMessages([...msgs, userMsg]);
+  setMessages([...msgs, userMsg], { id: convoId });
   if (emptyState.parentNode === chatEl) emptyState.remove();
   chatEl.appendChild(buildMsgEl(userMsg, msgs.length));
   scrollToBottom(true);
-  await sendFromIndex(msgs.length);
+  await sendFromIndex(msgs.length, convoId);
 }
 
 // ── DELEGATED CODE COPY ──
@@ -1252,19 +1606,28 @@ function toggleBar(btn, bar) {
 }
 
 // ── EVENTS ──
+function validatePortField(el) {
+  const valid = isPortValid(el.value);
+  el.style.borderColor = valid || el.value === '' ? '' : '#a55';
+  el.title = (valid || el.value === '') ? '' : `"${el.value}" isn't a valid port (must be a whole number 1–65535, no extra spaces)`;
+  return valid;
+}
+
+portInput.addEventListener('input', () => { validatePortField(portInput); refreshGenerationUI(); });
 portInput.addEventListener('change', () => { loadModels(modelSel.value); persist(); });
 modelSel.addEventListener('change', persist);
 statusPill.addEventListener('click', () => loadModels(modelSel.value));
 systemBtn.addEventListener('click', () => toggleBar(systemBtn, systemBar));
 settingsBtn.addEventListener('click', () => toggleBar(settingsBtn, settingsBar));
 thinkBtn.addEventListener('click', () => { thinkEnabled=!thinkEnabled; thinkBtn.classList.toggle('active',thinkEnabled); thinkBtn.setAttribute('aria-pressed',String(thinkEnabled)); persist(); });
-sshBtn.addEventListener('click', () => { sshEnabled=!sshEnabled; sshBtn.classList.toggle('active',sshEnabled); sshBtn.setAttribute('aria-pressed',String(sshEnabled)); sshBar.classList.toggle('visible',sshEnabled); persist(); updateSshCmd(); loadModels(modelSel.value); });
+sshBtn.addEventListener('click', () => { sshEnabled=!sshEnabled; sshBtn.classList.toggle('active',sshEnabled); sshBtn.setAttribute('aria-pressed',String(sshEnabled)); sshBar.classList.toggle('visible',sshEnabled); persist(); updateSshCmd(); loadModels(modelSel.value); refreshGenerationUI(); });
 diagBtn.addEventListener('click', () => { toggleBar(diagBtn, diagBar); if (diagBar.classList.contains('visible')) loadDiagnostics(); });
 themeBtn.addEventListener('click', () => { const d=document.documentElement.getAttribute('data-theme')==='dark'; document.documentElement.setAttribute('data-theme',d?'light':'dark'); themeBtn.textContent=d?'☾':'☀'; persist(); });
 sidebarTog.addEventListener('click', () => { sidebarEl.classList.toggle('collapsed'); persist(); });
 newChatBtn.addEventListener('click', newConvo);
 sysPmt.addEventListener('input', () => { updateCharCount(); persist(); });
 [sshHost,sshRemPort,sshLocPort].forEach(el => el.addEventListener('input', () => { updateSshCmd(); persist(); }));
+sshLocPort.addEventListener('input', () => { validatePortField(sshLocPort); refreshGenerationUI(); });
 [tempEl,topPEl,seedEl,kaEl].forEach(el => el.addEventListener('input', persist));
 
 maxTokEl.addEventListener('input', () => {
@@ -1287,13 +1650,18 @@ defaultsBtn.addEventListener('click', async () => {
   persist();
 });
 clearBtn.addEventListener('click', () => {
-  if (abortCtrl) abortCtrl.abort();
-  setGenerating(false); userScrolledUp=false; isProgrammatic=false;
+  const gen = activeGenerations.get(activeId);
+  if (gen) gen.abortCtrl.abort();
+  userScrolledUp=false; isProgrammatic=false;
   if (activeId) setMessages([]);
   renderChat();
-  setStatus(resolvedHost?'connected':'', resolvedHost?'connected':'');
+  refreshGenerationUI();
+  restoreLastConnectionStatus();
 });
-stopBtn.addEventListener('click', () => { if (abortCtrl) abortCtrl.abort(); });
+stopBtn.addEventListener('click', () => {
+  const gen = activeGenerations.get(activeId);
+  if (gen) gen.abortCtrl.abort();
+});
 sendBtn.addEventListener('click', sendMessage);
 msgInput.addEventListener('keydown', e => { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();} });
 msgInput.addEventListener('input', () => { msgInput.style.height='auto'; msgInput.style.height=Math.min(msgInput.scrollHeight,160)+'px'; });
