@@ -382,6 +382,7 @@ Requires:
 - Improved performance for large conversation histories
 - Improved conversation management
 - Add truncation notice, auto-context sync, and settings reset button
+- Fix cross-chat generation bleed and harden connection/storage handling
 ---
 
 ## License
