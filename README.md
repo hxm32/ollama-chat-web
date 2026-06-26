@@ -193,6 +193,7 @@ Enable **Thinking** when using reasoning-capable models such as:
 
 Reasoning traces appear in a collapsible "Thinking" section.
 
+### Visit Usage.txt to find a more detailed set of instructions.
 ---
 
 ### Generation Settings
