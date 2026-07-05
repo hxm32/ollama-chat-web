@@ -206,7 +206,7 @@ select option{background:var(--surface)}
 .katex-display{overflow-x:auto}
 
 /* FOOTER */
-footer{border-top:1px solid var(--border);background:var(--surface);padding:12px 14px;flex-shrink:0}
+.input-area-wrap{border-top:1px solid var(--border);background:var(--surface);padding:12px 14px;flex-shrink:0}
 .input-row{max-width:840px;margin:0 auto;display:flex;gap:8px;align-items:flex-end}
 #message-input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:14px;line-height:1.5;padding:11px 14px;resize:none;outline:none;max-height:160px;min-height:46px;transition:border-color 0.15s;font-family:inherit}
 #message-input:focus{border-color:var(--border-light)}
@@ -222,6 +222,19 @@ footer{border-top:1px solid var(--border);background:var(--surface);padding:12px
 
 /* MISC */
 .error-msg{color:var(--text-dim);font-size:13px;font-style:italic;padding:4px 0}
+#image-preview-strip{display:none;gap:6px;flex-wrap:wrap;padding:0 0 8px 0;max-width:840px;margin:0 auto}
+#image-preview-strip.has-images{display:flex}
+.img-thumb-wrap{position:relative;flex-shrink:0}
+.img-thumb{width:56px;height:56px;object-fit:cover;border-radius:6px;border:1px solid var(--border);display:block}
+.img-thumb-del{position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:var(--surface-3);border:1px solid var(--border-light);color:var(--text-muted);cursor:pointer;font-size:10px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0}
+.img-thumb-del:hover{background:var(--border-light);color:var(--text)}
+#attach-btn{background:none;border:1px solid var(--border);border-radius:var(--radius);color:var(--text-dim);cursor:pointer;flex-shrink:0;height:46px;width:46px;display:flex;align-items:center;justify-content:center;transition:color 0.15s,border-color 0.15s}
+#attach-btn:hover,#attach-btn:focus-visible{color:var(--text-muted);border-color:var(--border-light)}
+#attach-btn svg{width:18px;height:18px}
+.msg-images{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.msg-img{max-width:260px;max-height:260px;border-radius:8px;border:1px solid var(--border);object-fit:cover;cursor:pointer;transition:opacity 0.15s}
+.msg-img:hover{opacity:0.85}
+.drag-over #message-input{border-color:var(--border-light);background:var(--surface-2)}
 .truncation-notice{margin-top:10px;padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;color:var(--text-muted);line-height:1.5}
 .truncation-fix-btn{background:none;border:1px solid var(--border-light);border-radius:var(--radius-sm);color:var(--text);cursor:pointer;font-size:11px;font-weight:600;padding:2px 8px;margin:0 2px;transition:opacity 0.15s}
 .truncation-fix-btn:hover,.truncation-fix-btn:focus-visible{opacity:0.8}
@@ -295,11 +308,11 @@ footer{border-top:1px solid var(--border);background:var(--surface);padding:12px
         </select>
       </div>
       <div class="divider" role="separator"></div>
-      <button class="toggle-btn" id="system-btn" title="Set a system prompt, persona and standing instructions for the AI" aria-pressed="false">System</button>
-      <button class="toggle-btn" id="think-btn" title="Extended thinking: model reasons before replying. Requires a model that supports thinking, such as deepseek-r1, qwen3, etc." aria-pressed="false">Thinking</button>
+      <button class="toggle-btn" id="system-btn" title="Set a system prompt (persona and standing instructions) for the AI" aria-pressed="false">System</button>
+      <button class="toggle-btn" id="think-btn" title="Extended thinking, model reasons before replying. Requires deepseek-r1, qwen3, etc." aria-pressed="false">Thinking</button>
       <button class="toggle-btn" id="ssh-btn" title="Connect to Ollama on a remote machine via SSH tunnel" aria-pressed="false">SSH</button>
       <button class="toggle-btn" id="settings-btn" title="Adjust generation parameters" aria-pressed="false">Settings</button>
-      <button class="toggle-btn" id="diag-btn" title="Show connection diagnostics: Ollama version, loaded models" aria-pressed="false">Diagnostics</button>
+      <button class="toggle-btn" id="diag-btn" title="Show connection diagnostics — Ollama version, loaded models" aria-pressed="false">Diagnostics</button>
       <div class="divider" role="separator"></div>
       <button class="icon-btn" id="theme-btn" title="Toggle light/dark theme" aria-label="Toggle theme">☀</button>
       <button class="icon-btn" id="clear-btn" title="Clear current chat" aria-label="Clear chat">Clear</button>
@@ -335,7 +348,7 @@ footer{border-top:1px solid var(--border);background:var(--surface);padding:12px
       <input type="number" id="max-tokens" value="2048" min="64" max="32768" step="64">
     </div>
     <div class="setting-group">
-      <label for="ctx-size" title="Context window: how much conversation history the model sees.">Context</label>
+      <label for="ctx-size" title="Context window, how much conversation history the model sees.">Context</label>
       <input type="number" id="ctx-size" value="4096" min="512" max="131072" step="512">
     </div>
     <div class="setting-group">
@@ -377,8 +390,16 @@ footer{border-top:1px solid var(--border);background:var(--surface);padding:12px
     </div>
   </div>
 
-  <footer>
+  <div class="input-area-wrap" id="input-area-wrap">
+    <div id="image-preview-strip"></div>
     <div class="input-row">
+      <button id="attach-btn" title="Attach image (vision models only)" aria-label="Attach image">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
+        </svg>
+      </button>
+      <input type="file" id="image-file-input" accept="image/*" multiple style="display:none" aria-label="Choose images">
       <textarea id="message-input" placeholder="Message… (Enter to send, Shift+Enter for new line)" rows="1" aria-label="Message input"></textarea>
       <button id="send-btn" aria-label="Send message" title="Send (Enter)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -389,7 +410,7 @@ footer{border-top:1px solid var(--border);background:var(--surface);padding:12px
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
       </button>
     </div>
-  </footer>
+  </div>
 </div>
 
 <!-- Confirm / rename modal -->
@@ -470,9 +491,9 @@ function renderMarkdown(text) {
   text = text.replace(/\$\$([\s\S]*?)\$\$/g, (_, m) => { mathBlocks.push(m); return `<span data-kb="${mathBlocks.length-1}"></span>`; });
   // Inline math: require the content to not start/end with whitespace (standard
   // Pandoc-style heuristic) and skip pairs that look like plain currency amounts
-  // (e.g. "$100 and $50", purely numeric content with no math-y characters).
+  // (e.g. "$100 and $50", purely numeric content with no math characters).
   text = text.replace(/\$([^\$\n]+?)\$/g, (full, m) => {
-    if (/^\s|\s$/.test(m)) return full; // "$ x $" with padding: likely not math
+    if (/^\s|\s$/.test(m)) return full; // "$ x $" with padding so likely not math
     if (/^[\d,.]+$/.test(m.trim())) return full; // "$100", plain number, treat as currency
     mathInlines.push(m);
     return `<span data-ki="${mathInlines.length-1}"></span>`;
@@ -497,6 +518,10 @@ const emptyState  = $id('empty-state');
 const msgInput    = $id('message-input');
 const sendBtn     = $id('send-btn');
 const stopBtn     = $id('stop-btn');
+const attachBtn   = $id('attach-btn');
+const imageFileInput = $id('image-file-input');
+const imagePreviewStrip = $id('image-preview-strip');
+const inputAreaWrap = $id('input-area-wrap');
 const portInput   = $id('port-input');
 const modelSel    = $id('model-select');
 const clearBtn    = $id('clear-btn');
@@ -546,6 +571,7 @@ let resolvedHost = 'localhost';
 let userScrolledUp = false, isProgrammatic = false;
 let activeId = null, conversations = {}, modalResolve = null;
 let searchQuery = '';
+let pendingImages = [];
 const HOSTS = ['localhost', '127.0.0.1'];
 
 // Per-conversation generation tracking, keyed by conversation id.
@@ -746,9 +772,10 @@ function newConvo() {
 
 function switchConvo(id) {
   if (!conversations[id]) return;
-  if (id === activeId) { renderSidebar(); return; } // already viewing this chat, avoid tearing down a live stream for nothing
+  if (id === activeId) { renderSidebar(); return; }
   activeId = id;
   userScrolledUp = false;
+  clearPendingImages();
   persist();
   renderSidebar();
   renderChat();
@@ -931,7 +958,7 @@ function setStatus(state, label) {
   statusDot.className = 'status-dot ' + state;
   statusTxt.textContent = label;
   // Remember real connection outcomes (not transient 'loading') so we can restore
-  // them later, e.g. after clearing a chat, without falsely claiming "connected".
+  // them later (e.g. after clearing a chat) without falsely claiming "connected".
   if (state === 'connected' || state === 'error') {
     lastConnectionState = state;
     lastConnectionLabel = label;
@@ -1226,7 +1253,20 @@ function buildMsgEl(msg, index) {
     if (msg.stopped) bubble.appendChild(buildStoppedNotice());
     if (msg.truncated) bubble.appendChild(buildTruncationNotice());
   } else {
-    bubble.textContent = msg.content;
+    if (msg.images?.length) {
+      const imgRow = document.createElement('div');
+      imgRow.className = 'msg-images';
+      msg.images.forEach((dataUrl, i) => {
+        const img = document.createElement('img');
+        img.className = 'msg-img';
+        img.src = dataUrl;
+        img.alt = `Attached image ${i + 1}`;
+        img.addEventListener('click', () => window.open(dataUrl, '_blank'));
+        imgRow.appendChild(img);
+      });
+      bubble.appendChild(imgRow);
+    }
+    if (msg.content) bubble.appendChild(document.createTextNode(msg.content));
   }
 
   const acts = document.createElement('div');
@@ -1360,7 +1400,13 @@ async function sendFromIndex(fromIndex, convoId = activeId) {
   const apiMsgs = [];
   const sysText = sysPmt.value.trim();
   if (sysText) apiMsgs.push({ role:'system', content:sysText });
-  msgs.slice(0, fromIndex+1).forEach(m => apiMsgs.push({ role:m.role, content:m.content }));
+  msgs.slice(0, fromIndex+1).forEach(m => {
+    const entry = { role: m.role, content: m.content };
+    if (m.images?.length) {
+      entry.images = m.images.map(dataUrl => dataUrl.replace(/^data:[^;]+;base64,/, ''));
+    }
+    apiMsgs.push(entry);
+  });
 
   const gen = {
     id: convoId + ':' + Date.now(),
@@ -1394,23 +1440,52 @@ async function sendFromIndex(fromIndex, convoId = activeId) {
 
   try {
     const seedVal = parseInt(seedEl.value);
-    const body = {
-      model: modelNameAtSend, messages: apiMsgs, stream: true,
-      think: thinkEnabled, keep_alive: kaEl.value,
-      options: {
-        num_predict: parseInt(maxTokEl.value)||2048,
-        num_ctx: parseInt(ctxSzEl.value)||4096,
-        temperature: parseFloat(tempEl.value),
-        top_p: parseFloat(topPEl.value),
-        ...(seedVal >= 0 ? { seed: seedVal } : {}),
-      }
-    };
 
-    const res = await fetch(`${getBaseUrl()}/api/chat`, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(body), signal:gen.abortCtrl.signal,
-    });
-    if (!res.ok) { const t = await res.text().catch(()=>''); throw new Error(`HTTP ${res.status}${t?': '+t.slice(0,200):''}`); }
+  const hasImages = apiMsgs.some(m => m.images?.length);
+
+  const buildBody = (stripImages) => ({
+    model: modelNameAtSend, messages: stripImages
+      ? apiMsgs.map(m => { const { images, ...rest } = m; return rest; })
+      : apiMsgs,
+    stream: true, think: thinkEnabled, keep_alive: kaEl.value,
+    options: {
+      num_predict: parseInt(maxTokEl.value)||2048,
+      num_ctx: parseInt(ctxSzEl.value)||4096,
+      temperature: parseFloat(tempEl.value),
+      top_p: parseFloat(topPEl.value),
+      ...(seedVal >= 0 ? { seed: seedVal } : {}),
+    }
+  });
+
+  let res = await fetch(`${getBaseUrl()}/api/chat`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(buildBody(false)), signal:gen.abortCtrl.signal,
+  });
+
+  if (!res.ok && res.status === 400 && hasImages) {
+    const errText = await res.text().catch(()=>'');
+    if (errText.includes('multimodal') || errText.includes('does not support')) {
+      if (isVisible()) {
+        const warnWrap = document.createElement('div');
+        warnWrap.className = 'msg-wrapper assistant';
+        const warnMsg = document.createElement('div');
+        warnMsg.className = 'error-msg';
+        warnMsg.textContent = `⚠ ${modelNameAtSend} doesn't support images, retrying without them.`;
+        warnWrap.appendChild(warnMsg);
+        if (gen.loadWrap?.parentNode) {
+          chatEl.insertBefore(warnWrap, gen.loadWrap);
+        } else {
+          chatEl.appendChild(warnWrap);
+        }
+      }
+      res = await fetch(`${getBaseUrl()}/api/chat`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(buildBody(true)), signal:gen.abortCtrl.signal,
+      });
+    }
+  }
+
+  if (!res.ok) { const t = await res.text().catch(()=>''); throw new Error(`HTTP ${res.status}${t?': '+t.slice(0,200):''}`); }
 
     if (isVisible() && gen.loadWrap?.parentNode) gen.loadWrap.remove();
 
@@ -1556,9 +1631,63 @@ async function sendFromIndex(fromIndex, convoId = activeId) {
   }
 }
 
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({ dataUrl: reader.result, mime: file.type, name: file.name });
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function addImages(files) {
+  const MAX_IMAGES = 8;
+  const allowed = [...files].filter(f => f.type.startsWith('image/')).slice(0, MAX_IMAGES - pendingImages.length);
+  for (const file of allowed) {
+    try {
+      const img = await fileToBase64(file);
+      pendingImages.push(img);
+    } catch(e) { log.warn('Failed to read image:', file.name, e); }
+  }
+  renderPreviewStrip();
+  refreshGenerationUI();
+}
+
+function removeImage(idx) {
+  pendingImages.splice(idx, 1);
+  renderPreviewStrip();
+  refreshGenerationUI();
+}
+
+function clearPendingImages() {
+  pendingImages = [];
+  renderPreviewStrip();
+}
+
+function renderPreviewStrip() {
+  imagePreviewStrip.innerHTML = '';
+  imagePreviewStrip.classList.toggle('has-images', pendingImages.length > 0);
+  pendingImages.forEach((img, i) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'img-thumb-wrap';
+    const thumb = document.createElement('img');
+    thumb.className = 'img-thumb';
+    thumb.src = img.dataUrl;
+    thumb.alt = img.name;
+    const del = document.createElement('button');
+    del.className = 'img-thumb-del';
+    del.textContent = '✕';
+    del.setAttribute('aria-label', `Remove ${img.name}`);
+    del.addEventListener('click', () => removeImage(i));
+    wrap.append(thumb, del);
+    imagePreviewStrip.appendChild(wrap);
+  });
+}
+
 async function sendMessage() {
-  const text = msgInput.value.trim(); if (!text) return;
-  if (isGeneratingFor(activeId)) return; // active chat is already generating, block double-send
+  const text = msgInput.value.trim();
+  if (!text && pendingImages.length === 0) return;
+  if (isGeneratingFor(activeId)) return;
   const rawPort = sshEnabled ? sshLocPort.value : portInput.value;
   if (!isPortValid(rawPort)) {
     await showModal('Invalid port', `"${rawPort}" isn't a valid port number (1–65535). Fix the Port field before sending.`, { confirmLabel: 'OK', confirmClass: 'btn' });
@@ -1567,9 +1696,11 @@ async function sendMessage() {
   }
   msgInput.value = ''; msgInput.style.height = 'auto';
   if (!activeId) newConvo();
-  const convoId = activeId; // capture now, safe even if user switches chats mid-send
+  const convoId = activeId;
   const msgs = getMessages(convoId);
-  const userMsg = { role:'user', content:text, ts:Date.now() };
+  const images = pendingImages.map(img => img.dataUrl);
+  const userMsg = { role:'user', content:text, ts:Date.now(), ...(images.length ? { images } : {}) };
+  clearPendingImages();
   setMessages([...msgs, userMsg], { id: convoId });
   if (emptyState.parentNode === chatEl) emptyState.remove();
   chatEl.appendChild(buildMsgEl(userMsg, msgs.length));
@@ -1654,6 +1785,7 @@ clearBtn.addEventListener('click', () => {
   if (gen) gen.abortCtrl.abort();
   userScrolledUp=false; isProgrammatic=false;
   if (activeId) setMessages([]);
+  clearPendingImages();
   renderChat();
   refreshGenerationUI();
   restoreLastConnectionStatus();
@@ -1665,6 +1797,27 @@ stopBtn.addEventListener('click', () => {
 sendBtn.addEventListener('click', sendMessage);
 msgInput.addEventListener('keydown', e => { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();} });
 msgInput.addEventListener('input', () => { msgInput.style.height='auto'; msgInput.style.height=Math.min(msgInput.scrollHeight,160)+'px'; });
+
+attachBtn.addEventListener('click', () => imageFileInput.click());
+imageFileInput.addEventListener('change', () => { if (imageFileInput.files.length) addImages(imageFileInput.files); imageFileInput.value = ''; });
+
+msgInput.addEventListener('paste', e => {
+  const items = [...(e.clipboardData?.items || [])];
+  const imageItems = items.filter(item => item.type.startsWith('image/'));
+  if (imageItems.length) {
+    e.preventDefault();
+    addImages(imageItems.map(item => item.getAsFile()));
+  }
+});
+
+inputAreaWrap.addEventListener('dragover', e => { e.preventDefault(); inputAreaWrap.classList.add('drag-over'); });
+inputAreaWrap.addEventListener('dragleave', e => { if (!inputAreaWrap.contains(e.relatedTarget)) inputAreaWrap.classList.remove('drag-over'); });
+inputAreaWrap.addEventListener('drop', e => {
+  e.preventDefault();
+  inputAreaWrap.classList.remove('drag-over');
+  const files = [...(e.dataTransfer?.files || [])].filter(f => f.type.startsWith('image/'));
+  if (files.length) addImages(files);
+});
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key==='N') { e.preventDefault(); newConvo(); }
   if (e.key==='Escape'&&!modalEl.hidden) { modalEl.hidden=true; if(modalResolve){modalResolve(null);modalResolve=null;} }
