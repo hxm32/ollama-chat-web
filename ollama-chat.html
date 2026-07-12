@@ -17,6 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -35,7 +36,7 @@
 }
 html,body{height:100%}
 body{font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);display:flex;flex-direction:row;height:100vh;overflow:hidden;font-size:14px}
-:focus-visible{outline:none;box-shadow:var(--focus-ring)}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible,[role="button"]:focus-visible{outline:none;box-shadow:var(--focus-ring)}
 
 /* SIDEBAR */
 #sidebar{width:var(--sidebar-w);flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;height:100%;overflow:hidden;transition:width 0.2s ease}
@@ -85,6 +86,7 @@ header{display:flex;align-items:center;padding:9px 14px;border-bottom:1px solid 
 .ctrl-group{display:flex;align-items:center;gap:5px}
 .ctrl-label{font-size:10px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;white-space:nowrap;cursor:help}
 input[type="text"],input[type="number"],select{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:inherit;font-size:12px;padding:5px 8px;outline:none;transition:border-color 0.15s}
+input:disabled,select:disabled,.toggle-btn:disabled{opacity:0.45;cursor:not-allowed}
 input:focus,select:focus{border-color:var(--border-light)}
 select{cursor:pointer;appearance:none;padding-right:22px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath stroke='%23666' stroke-width='1.5' stroke-linecap='round' fill='none' d='M1 1l4 4 4-4'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 7px center}
 select option{background:var(--surface)}
@@ -106,6 +108,15 @@ select option{background:var(--surface)}
 .char-counter{font-size:10px;color:var(--text-dim);align-self:flex-end;white-space:nowrap}
 .char-counter.warn{color:#777}
 #ssh-bar .ssh-hint{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-dim);width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.search-hint{font-size:11px;color:var(--text-dim);width:100%;line-height:1.6;margin:0}
+.search-hint a{color:var(--text-muted)}
+.search-hint a:hover,.search-hint a:focus-visible{color:var(--text)}
+.search-status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-dim);margin-bottom:8px}
+.search-status::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--text-dim);animation:mic-pulse 1.2s ease-in-out infinite}
+.msg-sources{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.source-chip{display:inline-flex;align-items:center;max-width:220px;background:var(--surface-2);border:1px solid var(--border);border-radius:999px;padding:4px 10px;font-size:11px;color:var(--text-dim);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color 0.15s,border-color 0.15s}
+.source-chip:hover,.source-chip:focus-visible{color:var(--text);border-color:var(--border-light)}
+.search-capped-note{font-size:11px;color:var(--text-dim);margin-top:6px;font-style:italic}
 .setting-group{display:flex;flex-direction:column;gap:3px}
 .setting-group label{font-size:10px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;cursor:help}
 .setting-group input,.setting-group select{width:100px}
@@ -145,6 +156,8 @@ select option{background:var(--surface)}
 .edit-area{width:100%;background:var(--bg);border:1px solid var(--border-light);border-radius:var(--radius-sm);color:var(--text);font-size:14px;line-height:1.65;padding:10px 12px;resize:none;outline:none;margin-top:6px;font-family:inherit}
 .edit-area:focus{border-color:var(--text-dim)}
 .edit-controls{display:flex;gap:6px;margin-top:6px}
+.edit-attach-preview{display:flex;flex-wrap:wrap;gap:6px}
+.edit-attach-preview.has-attachments{margin-top:8px}
 .btn{background:var(--text);border:none;border-radius:var(--radius-sm);color:var(--bg);cursor:pointer;font-size:12px;font-weight:600;padding:6px 14px;transition:opacity 0.15s}
 .btn:hover,.btn:focus-visible{opacity:0.85}
 .btn.secondary{background:none;border:1px solid var(--border);color:var(--text-muted)}
@@ -187,11 +200,19 @@ select option{background:var(--surface)}
 .prose li{margin-bottom:4px}
 .prose li>ul,.prose li>ol{margin-top:4px;margin-bottom:0}
 .prose code{font-family:'JetBrains Mono',monospace;font-size:12px;background:var(--code-bg);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--text-muted)}
-.prose pre{background:var(--code-bg);border:1px solid var(--border);border-radius:var(--radius-sm);margin:10px 0;overflow-x:auto;position:relative}
-.prose pre code{background:none;border:none;border-radius:0;display:block;font-size:12px;line-height:1.7;padding:14px 16px;color:var(--text-muted);white-space:pre}
-.copy-code-btn{position:absolute;top:8px;right:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:4px;color:var(--text-dim);cursor:pointer;font-size:10px;padding:2px 7px;opacity:0;transition:opacity 0.15s,color 0.15s}
-.prose pre:hover .copy-code-btn{opacity:1}
-.copy-code-btn:hover,.copy-code-btn:focus-visible{color:var(--text-muted)}
+.code-block{background:var(--code-bg);border:1px solid var(--border);border-radius:var(--radius-sm);margin:10px 0;overflow:hidden}
+.code-block-header{display:flex;align-items:center;justify-content:space-between;padding:5px 10px;border-bottom:1px solid var(--border);font-size:11px}
+.code-lang-label{font-family:'JetBrains Mono',monospace;color:var(--text-dim);text-transform:lowercase}
+.code-block-actions{display:flex;gap:4px;opacity:0;transition:opacity 0.15s}
+.code-block:hover .code-block-actions,.code-block-actions:focus-within{opacity:1}
+.code-block-actions button{background:var(--surface-2);border:1px solid var(--border);border-radius:4px;color:var(--text-dim);cursor:pointer;font-size:10px;padding:2px 7px;transition:color 0.15s,border-color 0.15s}
+.code-block-actions button:hover,.code-block-actions button:focus-visible{color:var(--text-muted)}
+.code-block-actions button.active{color:var(--text);border-color:var(--border-light)}
+.code-block-body{display:flex;overflow-x:auto}
+.code-line-numbers{flex:0 0 auto;text-align:right;padding:14px 8px 14px 12px;user-select:none;color:var(--text-dim);font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.7;border-right:1px solid var(--border);white-space:pre}
+.code-block pre{margin:0;border:none;background:none;border-radius:0;flex:1;min-width:0}
+.code-block pre code{background:none;border:none;border-radius:0;display:block;font-size:12px;line-height:1.7;padding:14px 16px;color:var(--text-muted);white-space:pre}
+.code-block pre code.wrapped{white-space:pre-wrap;word-break:break-word}
 .prose blockquote{border-left:2px solid var(--border-light);color:var(--text-muted);margin:10px 0;padding:4px 0 4px 14px;font-style:italic}
 .prose strong{font-weight:600}
 .prose em{font-style:italic;color:var(--text-muted)}
@@ -234,6 +255,36 @@ select option{background:var(--surface)}
 .msg-images{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
 .msg-img{max-width:260px;max-height:260px;border-radius:8px;border:1px solid var(--border);object-fit:cover;cursor:pointer;transition:opacity 0.15s}
 .msg-img:hover{opacity:0.85}
+
+#doc-preview-strip{display:none;gap:6px;flex-wrap:wrap;padding:0 0 8px 0;max-width:840px;margin:0 auto}
+#doc-preview-strip.has-docs{display:flex}
+.doc-chip{position:relative;display:flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 22px 5px 9px;font-size:11px;color:var(--text-muted);max-width:180px}
+.doc-chip-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.doc-chip-del{position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:var(--surface-3);border:1px solid var(--border-light);color:var(--text-muted);cursor:pointer;font-size:10px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0}
+.doc-chip-del:hover{background:var(--border-light);color:var(--text)}
+#doc-attach-btn{background:none;border:1px solid var(--border);border-radius:var(--radius);color:var(--text-dim);cursor:pointer;flex-shrink:0;height:46px;width:46px;display:flex;align-items:center;justify-content:center;transition:color 0.15s,border-color 0.15s}
+#doc-attach-btn:hover,#doc-attach-btn:focus-visible{color:var(--text-muted);border-color:var(--border-light)}
+#doc-attach-btn svg{width:18px;height:18px}
+.msg-docs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.msg-doc-chip{display:flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 10px;font-size:11px;color:var(--text-muted);max-width:220px}
+.msg-doc-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+#mic-btn{background:none;border:1px solid var(--border);border-radius:var(--radius);color:var(--text-dim);cursor:pointer;flex-shrink:0;height:46px;width:46px;display:flex;align-items:center;justify-content:center;transition:color 0.15s,border-color 0.15s}
+#mic-btn:hover,#mic-btn:focus-visible{color:var(--text-muted);border-color:var(--border-light)}
+#mic-btn svg{width:17px;height:17px}
+#mic-btn.recording{color:#e5484d;border-color:#e5484d;animation:mic-pulse 1.2s ease-in-out infinite}
+@keyframes mic-pulse{0%,100%{opacity:1}50%{opacity:0.55}}
+
+#jump-bottom-btn{position:sticky;bottom:8px;left:50%;transform:translateX(-50%);display:none;background:var(--surface-2);border:1px solid var(--border-light);border-radius:999px;color:var(--text);cursor:pointer;font-size:12px;padding:6px 14px;box-shadow:0 2px 10px rgba(0,0,0,0.3);z-index:5}
+#jump-bottom-btn.visible{display:block}
+
+.template-row{display:flex;gap:6px;width:100%;align-items:center}
+.template-row select{flex:1;min-width:120px}
+.template-row .sidebar-footer-btn{flex:0 0 auto;padding:5px 10px}
+.template-row .sidebar-footer-btn:disabled{opacity:0.4;cursor:not-allowed}
+
+.chat-item-snippet{display:block;font-size:11px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
+.chat-item-snippet mark{background:none;color:var(--text);font-weight:600}
 .drag-over #message-input{border-color:var(--border-light);background:var(--surface-2)}
 .truncation-notice{margin-top:10px;padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;color:var(--text-muted);line-height:1.5}
 .truncation-fix-btn{background:none;border:1px solid var(--border-light);border-radius:var(--radius-sm);color:var(--text);cursor:pointer;font-size:11px;font-weight:600;padding:2px 8px;margin:0 2px;transition:opacity 0.15s}
@@ -264,6 +315,8 @@ select option{background:var(--surface)}
   .msg-wrapper{padding:3px 10px}
   .msg-bubble{max-width:95%}
   .expand-bar{padding:8px 10px}
+  #attach-btn,#doc-attach-btn,#mic-btn,#send-btn,#stop-btn{width:38px;height:38px}
+  #attach-btn svg,#doc-attach-btn svg,#mic-btn svg,#send-btn svg,#stop-btn svg{width:15px;height:15px}
 }
 </style>
 </head>
@@ -310,6 +363,7 @@ select option{background:var(--surface)}
       <div class="divider" role="separator"></div>
       <button class="toggle-btn" id="system-btn" title="Set a system prompt (persona and standing instructions) for the AI" aria-pressed="false">System</button>
       <button class="toggle-btn" id="think-btn" title="Extended thinking, model reasons before replying. Requires deepseek-r1, qwen3, etc." aria-pressed="false">Thinking</button>
+      <button class="toggle-btn" id="search-btn" title="Let the model search the web using Ollama's web search API. Requires a tool-calling model and an API key." aria-pressed="false">Search</button>
       <button class="toggle-btn" id="ssh-btn" title="Connect to Ollama on a remote machine via SSH tunnel" aria-pressed="false">SSH</button>
       <button class="toggle-btn" id="settings-btn" title="Adjust generation parameters" aria-pressed="false">Settings</button>
       <button class="toggle-btn" id="diag-btn" title="Show connection diagnostics — Ollama version, loaded models" aria-pressed="false">Diagnostics</button>
@@ -320,10 +374,36 @@ select option{background:var(--surface)}
   </header>
 
   <div id="system-prompt-bar" class="expand-bar" role="region" aria-label="System prompt">
+    <div class="template-row">
+      <select id="template-select" aria-label="Load a saved system prompt">
+        <option value="">Saved prompts…</option>
+      </select>
+      <button id="template-save-btn" class="sidebar-footer-btn" title="Save current system prompt as a template" aria-label="Save as template">Save</button>
+      <button id="template-del-btn" class="sidebar-footer-btn" title="Delete selected template" aria-label="Delete template" disabled>Delete</button>
+    </div>
     <textarea id="system-prompt" rows="2" maxlength="4000"
       placeholder="System prompt, sets the AI's persona and rules. E.g. 'You are a concise assistant. Always respond in bullet points.'"
       aria-label="System prompt"></textarea>
     <span class="char-counter" id="sys-char-counter" aria-live="polite">0 / 4000</span>
+  </div>
+
+  <div id="search-bar" class="expand-bar" role="region" aria-label="Web search settings">
+    <p class="search-hint">
+      Uses <a href="https://ollama.com/blog/web-search" target="_blank" rel="noopener noreferrer">Ollama's hosted web search API</a> as a tool the model can call. This requires internet access (separate from your local Ollama server) and an API key from your Ollama account. Sign in, then click <strong>Add API Key</strong> at
+      <a href="https://ollama.com/settings/keys" target="_blank" rel="noopener noreferrer">ollama.com/settings/keys</a> to generate one. Only models with tool-calling support (e.g. llama3.1+, qwen3, mistral-nemo) will actually use it.
+    </p>
+    <p class="search-hint">
+      ⚠ Browsers block calling that API directly (CORS), it doesn't work without a proxy. Run the included <code>ollama-search-proxy.py</code> script (needs only Python, no install), then set the Proxy URL below to what it prints. Without a proxy, search will fail with a network error.
+    </p>
+    <div class="ctrl-group">
+      <span class="ctrl-label" title="Your Ollama account API key, used only to call ollama.com's search API">API Key</span>
+      <input type="password" id="search-api-key" placeholder="Paste your Ollama API key" style="width:260px" autocomplete="off" aria-label="Ollama web search API key">
+    </div>
+    <div class="ctrl-group">
+      <span class="ctrl-label" title="Local proxy address that forwards search requests to ollama.com, working around browser CORS restrictions">Proxy URL</span>
+      <input type="text" id="search-proxy-url" placeholder="http://127.0.0.1:8787" style="width:260px" autocomplete="off" aria-label="Search proxy URL">
+    </div>
+    <div id="search-model-note" class="search-hint" role="status" aria-live="polite"></div>
   </div>
 
   <div id="ssh-bar" class="expand-bar" role="region" aria-label="SSH tunnel settings">
@@ -389,9 +469,11 @@ select option{background:var(--surface)}
       </div>
     </div>
   </div>
+  <button id="jump-bottom-btn" aria-label="Jump to latest message" title="Jump to latest message" hidden>↓ New messages</button>
 
   <div class="input-area-wrap" id="input-area-wrap">
     <div id="image-preview-strip"></div>
+    <div id="doc-preview-strip"></div>
     <div class="input-row">
       <button id="attach-btn" title="Attach image (vision models only)" aria-label="Attach image">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -400,7 +482,18 @@ select option{background:var(--surface)}
         </svg>
       </button>
       <input type="file" id="image-file-input" accept="image/*" multiple style="display:none" aria-label="Choose images">
+      <button id="doc-attach-btn" title="Attach a text, Markdown, or PDF file" aria-label="Attach document">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+        </svg>
+      </button>
+      <input type="file" id="doc-file-input" accept=".txt,.md,.markdown,.pdf,text/plain,text/markdown,application/pdf" multiple style="display:none" aria-label="Choose documents">
       <textarea id="message-input" placeholder="Message… (Enter to send, Shift+Enter for new line)" rows="1" aria-label="Message input"></textarea>
+      <button id="mic-btn" title="Dictate message" aria-label="Dictate message" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </button>
       <button id="send-btn" aria-label="Send message" title="Send (Enter)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
@@ -458,13 +551,16 @@ DOMPurify.addHook('afterSanitizeAttributes', node => {
 });
 
 let codeBlockCounter = 0;
+const CODE_EXT_MAP = { javascript:'js', js:'js', jsx:'jsx', typescript:'ts', ts:'ts', tsx:'tsx', python:'py', py:'py', java:'java', c:'c', cpp:'cpp', 'c++':'cpp', csharp:'cs', 'c#':'cs', go:'go', golang:'go', rust:'rs', ruby:'rb', rb:'rb', php:'php', html:'html', xml:'xml', css:'css', scss:'scss', json:'json', yaml:'yml', yml:'yml', bash:'sh', sh:'sh', shell:'sh', zsh:'sh', sql:'sql', markdown:'md', md:'md', kotlin:'kt', swift:'swift', plaintext:'txt', text:'txt' };
+const MAX_GUTTER_LINES = 3000;
 const renderer = new marked.Renderer();
 renderer.code = (code, lang) => {
   const id = `cb-${++codeBlockCounter}`;
+  const langKey = (lang || '').trim().toLowerCase().split(/\s+/)[0];
   let highlighted = '';
   try {
-    if (lang && hljs.getLanguage(lang)) {
-      highlighted = hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
+    if (langKey && hljs.getLanguage(langKey)) {
+      highlighted = hljs.highlight(code, { language: langKey, ignoreIllegals: true }).value;
     } else if (code.length <= HLJS_SIZE_LIMIT) {
       highlighted = hljs.highlightAuto(code).value;
     } else {
@@ -473,7 +569,23 @@ renderer.code = (code, lang) => {
   } catch {
     highlighted = code.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
-  return `<pre><code id="${id}">${highlighted}</code><button class="copy-code-btn" data-copy-id="${id}" aria-label="Copy code">copy</button></pre>`;
+  const lineCount = Math.max(1, code.split('\n').length - (code.endsWith('\n') ? 1 : 0));
+  const ext = CODE_EXT_MAP[langKey] || 'txt';
+  const label = escHtml(langKey || 'text');
+  const gutter = lineCount <= MAX_GUTTER_LINES
+    ? `<div class="code-line-numbers" aria-hidden="true">${Array.from({length: lineCount}, (_, i) => i+1).join('\n')}</div>`
+    : '';
+  return `<div class="code-block" data-ext="${ext}">
+    <div class="code-block-header">
+      <span class="code-lang-label">${label}</span>
+      <div class="code-block-actions">
+        <button class="wrap-code-btn" data-wrap-id="${id}" aria-label="Toggle line wrap" aria-pressed="false" title="Toggle line wrap">wrap</button>
+        <button class="dl-code-btn" data-dl-id="${id}" data-dl-ext="${ext}" aria-label="Download code" title="Download as file">↓</button>
+        <button class="copy-code-btn" data-copy-id="${id}" aria-label="Copy code">copy</button>
+      </div>
+    </div>
+    <div class="code-block-body">${gutter}<pre><code id="${id}">${highlighted}</code></pre></div>
+  </div>`;
 };
 marked.use({ renderer });
 
@@ -501,11 +613,11 @@ function renderMarkdown(text) {
   let html = marked.parse(text);
   html = DOMPurify.sanitize(html, { ALLOWED_URI_REGEXP: /^https?:/i });
   html = html.replace(/<span data-kb="(\d+)"><\/span>/g, (_, i) => {
-    try { return katex.renderToString(mathBlocks[+i], { displayMode: true, throwOnError: false, trust: false }); }
+    try { return DOMPurify.sanitize(katex.renderToString(mathBlocks[+i], { displayMode: true, throwOnError: false, trust: false }), { ALLOWED_URI_REGEXP: /^https?:/i }); }
     catch { return DOMPurify.sanitize(mathBlocks[+i]); }
   });
   html = html.replace(/<span data-ki="(\d+)"><\/span>/g, (_, i) => {
-    try { return katex.renderToString(mathInlines[+i], { displayMode: false, throwOnError: false, trust: false }); }
+    try { return DOMPurify.sanitize(katex.renderToString(mathInlines[+i], { displayMode: false, throwOnError: false, trust: false }), { ALLOWED_URI_REGEXP: /^https?:/i }); }
     catch { return DOMPurify.sanitize(mathInlines[+i]); }
   });
   return html;
@@ -521,6 +633,14 @@ const stopBtn     = $id('stop-btn');
 const attachBtn   = $id('attach-btn');
 const imageFileInput = $id('image-file-input');
 const imagePreviewStrip = $id('image-preview-strip');
+const docAttachBtn = $id('doc-attach-btn');
+const docFileInput = $id('doc-file-input');
+const docPreviewStrip = $id('doc-preview-strip');
+const micBtn      = $id('mic-btn');
+const jumpBottomBtn = $id('jump-bottom-btn');
+const templateSel = $id('template-select');
+const templateSaveBtn = $id('template-save-btn');
+const templateDelBtn = $id('template-del-btn');
 const inputAreaWrap = $id('input-area-wrap');
 const portInput   = $id('port-input');
 const modelSel    = $id('model-select');
@@ -530,6 +650,11 @@ const statusTxt   = $id('status-text');
 const statusPill  = $id('status-pill');
 const systemBtn   = $id('system-btn');
 const thinkBtn    = $id('think-btn');
+const searchBtn   = $id('search-btn');
+const searchBar   = $id('search-bar');
+const searchApiKeyEl = $id('search-api-key');
+const searchProxyUrlEl = $id('search-proxy-url');
+const searchModelNote = $id('search-model-note');
 const sshBtn      = $id('ssh-btn');
 const settingsBtn = $id('settings-btn');
 const diagBtn     = $id('diag-btn');
@@ -566,12 +691,14 @@ const modalCancel = $id('modal-cancel');
 const modalConf   = $id('modal-confirm');
 
 // ── STATE ──
-let thinkEnabled = false, sshEnabled = false;
+let thinkEnabled = false, sshEnabled = false, searchEnabled = false;
+let currentModelCapabilities = null; // null = unknown, else array from /api/show
 let resolvedHost = 'localhost';
 let userScrolledUp = false, isProgrammatic = false;
 let activeId = null, conversations = {}, modalResolve = null;
 let searchQuery = '';
 let pendingImages = [];
+let pendingDocs = [];
 const HOSTS = ['localhost', '127.0.0.1'];
 
 // Per-conversation generation tracking, keyed by conversation id.
@@ -588,9 +715,21 @@ const log = {
 };
 
 // ── STORAGE ──
+let storageWarningShown = false;
+function warnStorageFull() {
+  if (storageWarningShown) return;
+  if (!modalEl.hidden) { log.warn('Storage full, but a dialog is already open; deferring notice.'); return; }
+  storageWarningShown = true;
+  showModal('Storage full', 'Browser storage (about 5MB) is full, so this change could not be saved. Export your chats and delete some old conversations to free up space.', { confirmLabel: 'OK', confirmClass: 'btn' });
+}
+
 function safeSet(key, val) {
   try { localStorage.setItem(key, JSON.stringify(val)); return true; }
-  catch(e) { log.error('localStorage write failed:', key, e); return false; }
+  catch(e) {
+    log.error('localStorage write failed:', key, e);
+    if (e.name === 'QuotaExceededError' || e.code === 22) warnStorageFull();
+    return false;
+  }
 }
 function safeGet(key, fallback = null) {
   try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v); }
@@ -658,11 +797,14 @@ function persist() {
     system: sysPmt.value, maxTokens: maxTokEl.value, ctxSize: ctxSzEl.value,
     temperature: tempEl.value, topP: topPEl.value, seed: seedEl.value, keepAlive: kaEl.value,
     theme: document.documentElement.getAttribute('data-theme'),
-    thinkEnabled, sshEnabled,
+    thinkEnabled, sshEnabled, searchEnabled,
+    searchApiKey: searchApiKeyEl.value,
+    searchProxyUrl: searchProxyUrlEl.value,
     sshHost: sshHost.value, sshRemPort: sshRemPort.value, sshLocPort: sshLocPort.value,
     systemBarOpen: systemBar.classList.contains('visible'),
     settingsBarOpen: settingsBar.classList.contains('visible'),
     sshBarOpen: sshBar.classList.contains('visible'),
+    searchBarOpen: searchBar.classList.contains('visible'),
     diagBarOpen: diagBar.classList.contains('visible'),
     sidebarCollapsed: sidebarEl.classList.contains('collapsed'),
   };
@@ -690,13 +832,17 @@ function loadPersisted() {
   if (s.sshHost)     sshHost.value = s.sshHost;
   if (s.sshRemPort)  sshRemPort.value = s.sshRemPort;
   if (s.sshLocPort)  sshLocPort.value = s.sshLocPort;
+  if (s.searchApiKey) searchApiKeyEl.value = s.searchApiKey;
+  if (s.searchProxyUrl) searchProxyUrlEl.value = s.searchProxyUrl;
   if (s.theme) document.documentElement.setAttribute('data-theme', s.theme);
   themeBtn.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '☀' : '☾';
   if (s.thinkEnabled)    { thinkEnabled = true; thinkBtn.classList.add('active'); thinkBtn.setAttribute('aria-pressed','true'); }
   if (s.sshEnabled)      { sshEnabled = true; sshBtn.classList.add('active'); sshBtn.setAttribute('aria-pressed','true'); }
+  if (s.searchEnabled)   { searchEnabled = true; searchBtn.classList.add('active'); searchBtn.setAttribute('aria-pressed','true'); }
   if (s.systemBarOpen)   { systemBar.classList.add('visible'); systemBtn.classList.add('active'); systemBtn.setAttribute('aria-pressed','true'); }
   if (s.settingsBarOpen) { settingsBar.classList.add('visible'); settingsBtn.classList.add('active'); settingsBtn.setAttribute('aria-pressed','true'); }
   if (s.sshBarOpen)      { sshBar.classList.add('visible'); sshBtn.classList.add('active'); sshBtn.setAttribute('aria-pressed','true'); }
+  if (s.searchBarOpen)   { searchBar.classList.add('visible'); searchBtn.classList.add('active'); searchBtn.setAttribute('aria-pressed','true'); }
   if (s.diagBarOpen)     { diagBar.classList.add('visible'); diagBtn.classList.add('active'); diagBtn.setAttribute('aria-pressed','true'); }
   if (s.sidebarCollapsed) sidebarEl.classList.add('collapsed');
   updateSshCmd();
@@ -763,11 +909,33 @@ function newConvo() {
   conversations[id] = { id, title: 'New chat', messages: [], created: Date.now(), updated: Date.now() };
   activeId = id;
   saveConvo(id);
+  clearPendingImages();
+  clearPendingDocs();
   persist();
   renderSidebar();
   renderChat();
   refreshGenerationUI();
   return id;
+}
+
+function forkConversationAt(index, convoId = activeId) {
+  const src = conversations[convoId];
+  if (!src) return;
+  const msgs = getMessages(convoId).slice(0, index + 1).map(m => ({ ...m }));
+  const id = genId();
+  conversations[id] = {
+    id, title: (src.title || 'Chat').replace(/ \(fork\)$/, '') + ' (fork)',
+    messages: msgs, created: Date.now(), updated: Date.now(),
+  };
+  saveConvo(id);
+  activeId = id;
+  userScrolledUp = false;
+  clearPendingImages();
+  clearPendingDocs();
+  persist();
+  renderSidebar();
+  renderChat();
+  refreshGenerationUI();
 }
 
 function switchConvo(id) {
@@ -776,6 +944,7 @@ function switchConvo(id) {
   activeId = id;
   userScrolledUp = false;
   clearPendingImages();
+  clearPendingDocs();
   persist();
   renderSidebar();
   renderChat();
@@ -842,10 +1011,27 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function findSnippet(msgs, q) {
+  for (const m of msgs) {
+    if (!m.content) continue;
+    const idx = m.content.toLowerCase().indexOf(q);
+    if (idx === -1) continue;
+    const start = Math.max(0, idx - 20);
+    const end = Math.min(m.content.length, idx + q.length + 20);
+    return (start > 0 ? '…' : '') + m.content.slice(start, end) + (end < m.content.length ? '…' : '');
+  }
+  return null;
+}
+
 function renderSidebar() {
   chatListEl.innerHTML = '';
-  const q = searchQuery.toLowerCase();
-  const ids = sortedIds().filter(id => !q || conversations[id].title.toLowerCase().includes(q));
+  const q = searchQuery.trim().toLowerCase();
+  const ids = sortedIds().filter(id => {
+    if (!q) return true;
+    const c = conversations[id];
+    if (c.title.toLowerCase().includes(q)) return true;
+    return (c.messages || []).some(m => m.content?.toLowerCase().includes(q));
+  });
   for (const id of ids) {
     const c = conversations[id];
     const item = document.createElement('div');
@@ -853,22 +1039,32 @@ function renderSidebar() {
     item.setAttribute('role', 'listitem');
     item.setAttribute('tabindex', '0');
     item.setAttribute('aria-label', c.title);
+    const titleMatches = q && c.title.toLowerCase().includes(q);
+    const snippet = (q && !titleMatches) ? findSnippet(c.messages || [], q) : null;
     item.innerHTML = `<span class="chat-item-title">${escHtml(c.title)}</span>
+      ${snippet ? `<span class="chat-item-snippet">${escHtml(snippet)}</span>` : ''}
       <span class="chat-item-actions">
+        <button class="chat-item-btn" data-mdexport="${escHtml(id)}" title="Export as Markdown" aria-label="Export chat as Markdown">⇩</button>
         <button class="chat-item-btn" data-rename="${escHtml(id)}" title="Rename" aria-label="Rename chat">✎</button>
         <button class="chat-item-btn" data-del="${escHtml(id)}" title="Delete" aria-label="Delete chat">✕</button>
       </span>`;
     item.addEventListener('click', e => {
       if (e.target.dataset.del) { e.stopPropagation(); deleteConvo(e.target.dataset.del); }
       else if (e.target.dataset.rename) { e.stopPropagation(); renameConvo(e.target.dataset.rename); }
+      else if (e.target.dataset.mdexport) { e.stopPropagation(); exportConvoMarkdown(e.target.dataset.mdexport); }
       else switchConvo(id);
     });
-    item.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!e.target.dataset.del && !e.target.dataset.rename) switchConvo(id); } });
+    item.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!e.target.dataset.del && !e.target.dataset.rename && !e.target.dataset.mdexport) switchConvo(id); } });
     chatListEl.appendChild(item);
   }
 }
 
-chatSearch.addEventListener('input', () => { searchQuery = chatSearch.value; renderSidebar(); });
+let _searchDebounce = null;
+chatSearch.addEventListener('input', () => {
+  clearTimeout(_searchDebounce);
+  _searchDebounce = setTimeout(() => { searchQuery = chatSearch.value; renderSidebar(); }, 150);
+});
+
 
 // ── EXPORT / IMPORT ──
 exportBtn.addEventListener('click', () => {
@@ -880,10 +1076,37 @@ exportBtn.addEventListener('click', () => {
   URL.revokeObjectURL(a.href);
 });
 
-const IMPORT_MAX_FILE_BYTES = 20 * 1024 * 1024; // 20MB raw file cap
+function exportConvoMarkdown(id) {
+  const c = conversations[id];
+  if (!c) return;
+  const lines = [`# ${c.title || 'Chat'}`, ''];
+  for (const m of c.messages || []) {
+    const who = m.role === 'user' ? 'You' : 'Assistant';
+    const when = m.ts ? new Date(m.ts).toLocaleString() : '';
+    lines.push(`## ${who}${when ? ' — ' + when : ''}`, '');
+    if (m.images?.length) lines.push(`_${m.images.length} image(s) attached_`, '');
+    if (m.docs?.length) lines.push(`_Attached file(s): ${m.docs.map(d => d.name).join(', ')}_`, '');
+    if (m.think) lines.push('<details><summary>Thinking</summary>', '', m.think, '', '</details>', '');
+    lines.push(m.content || '', '');
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/markdown' }));
+  a.download = `${(c.title || 'chat').replace(/[^\w-]+/g, '_').slice(0, 60)}.md`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+const IMPORT_MAX_FILE_BYTES = 4 * 1024 * 1024;
 const IMPORT_MAX_CONVOS = 2000;
 const IMPORT_MAX_MESSAGES_PER_CONVO = 5000;
-const IMPORT_MAX_MESSAGE_CHARS = 200000; // ~200k chars per message
+const IMPORT_MAX_MESSAGE_CHARS = 200000;
+const IMPORT_MAX_IMAGES_PER_MSG = 8;
+const IMPORT_MAX_IMAGE_DATA_URL_CHARS = 14 * 1024 * 1024;
+const isValidImportImage = s => typeof s === 'string'
+  && s.length <= IMPORT_MAX_IMAGE_DATA_URL_CHARS
+  && /^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/]+=*$/i.test(s);
+const IMPORT_MAX_DOCS_PER_MSG = 4;
+const IMPORT_MAX_DOC_CHARS = 50000;
 
 importFile.addEventListener('change', async () => {
   const file = importFile.files[0];
@@ -915,6 +1138,19 @@ importFile.addEventListener('change', async () => {
       for (const m of c.messages) {
         if (!m || typeof m.content !== 'string' || (m.role !== 'user' && m.role !== 'assistant')) continue;
         if (m.content.length > IMPORT_MAX_MESSAGE_CHARS) { tooLarge = true; break; }
+        let images;
+        if (m.role === 'user' && Array.isArray(m.images)) {
+          const validImages = m.images.filter(isValidImportImage).slice(0, IMPORT_MAX_IMAGES_PER_MSG);
+          if (validImages.length) images = validImages;
+        }
+        let docs;
+        if (m.role === 'user' && Array.isArray(m.docs)) {
+          const validDocs = m.docs
+            .filter(d => d && typeof d.name === 'string' && typeof d.text === 'string' && d.text.length <= IMPORT_MAX_DOC_CHARS)
+            .slice(0, IMPORT_MAX_DOCS_PER_MSG)
+            .map(d => ({ name: d.name.slice(0, 200), text: d.text }));
+          if (validDocs.length) docs = validDocs;
+        }
         cleanMsgs.push({
           role: m.role,
           content: m.content,
@@ -923,6 +1159,8 @@ importFile.addEventListener('change', async () => {
           tokens: typeof m.tokens === 'number' ? m.tokens : undefined,
           tps: typeof m.tps === 'number' ? m.tps : undefined,
           truncated: m.truncated === true ? true : undefined,
+          ...(images ? { images } : {}),
+          ...(docs ? { docs } : {}),
         });
       }
       if (tooLarge) { skipped++; continue; }
@@ -1006,7 +1244,7 @@ async function loadModels(preferred) {
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 5000);
-      const res = await fetch(`http://${host}:${port}/api/tags`, { signal: ctrl.signal });
+      const res = await fetch(`${apiProtocol()}//${host}:${port}/api/tags`, { signal: ctrl.signal });
       clearTimeout(t);
       if (!res.ok) continue;
       const data = await res.json();
@@ -1021,6 +1259,7 @@ async function loadModels(preferred) {
       if (preferred) { const o = [...modelSel.options].find(o => o.value === preferred); if (o) modelSel.value = preferred; }
       setStatus('connected', 'connected');
       persist();
+      checkModelCapabilities(modelSel.value);
       if (diagBar.classList.contains('visible')) loadDiagnostics();
       return;
     } catch(e) {
@@ -1030,6 +1269,39 @@ async function loadModels(preferred) {
   }
   modelSel.innerHTML = '<option value="">connection failed</option>';
   setStatus('error', 'offline');
+}
+
+async function checkModelCapabilities(modelName) {
+  currentModelCapabilities = null;
+  updateSearchModelNote();
+  if (!modelName) return;
+  try {
+    const res = await fetch(`${getBaseUrl()}/api/show`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: modelName }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (Array.isArray(data.capabilities)) currentModelCapabilities = data.capabilities;
+  } catch (e) { log.warn('Could not check model capabilities:', e.message); }
+  updateSearchModelNote();
+}
+
+function modelLikelySupportsTools() {
+  // null = unknown (older Ollama or check failed) → don't block, let the request itself decide
+  return currentModelCapabilities === null || currentModelCapabilities.includes('tools');
+}
+
+function updateSearchModelNote() {
+  if (!searchModelNote) return;
+  if (!modelSel.value) { searchModelNote.textContent = ''; return; }
+  if (currentModelCapabilities === null) {
+    searchModelNote.textContent = '';
+  } else if (currentModelCapabilities.includes('tools')) {
+    searchModelNote.textContent = `✓ ${modelSel.value} reports tool-calling support.`;
+  } else {
+    searchModelNote.textContent = `⚠ ${modelSel.value} doesn't report tool-calling support, search likely won't trigger with this model.`;
+  }
 }
 
 function getValidPort(rawValue, fallback = 11434) {
@@ -1044,22 +1316,33 @@ function isPortValid(rawValue) {
   return Number.isInteger(n) && n >= 1 && n <= 65535 && String(n) === String(rawValue).trim();
 }
 
+function apiProtocol() { return location.protocol === 'https:' ? 'https:' : 'http:'; }
+
 function getBaseUrl() {
   const port = sshEnabled ? getValidPort(sshLocPort.value) : getValidPort(portInput.value);
   const host = sshEnabled ? 'localhost' : resolvedHost;
-  return `http://${host}:${port}`;
+  return `${apiProtocol()}//${host}:${port}`;
 }
 
 // ── SCROLL ──
+function updateJumpButton() {
+  jumpBottomBtn.classList.toggle('visible', userScrolledUp);
+}
+
 chatEl.addEventListener('scroll', () => {
   if (isProgrammatic) return;
   userScrolledUp = (chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight) > 60;
+  updateJumpButton();
 }, { passive: true });
+
+jumpBottomBtn.addEventListener('click', () => scrollToBottom(true));
 
 function scrollToBottom(force = false) {
   if (!force && userScrolledUp) return;
   isProgrammatic = true;
   chatEl.scrollTop = chatEl.scrollHeight;
+  userScrolledUp = false;
+  updateJumpButton();
   requestAnimationFrame(() => { isProgrammatic = false; });
 }
 
@@ -1074,7 +1357,8 @@ function estimateMessageHeight(msg) {
   const lines = Math.max(1, Math.ceil((msg.content?.length || 0) / CHARS_PER_LINE));
   const codeBlockCount = (msg.content?.match(/```/g)?.length || 0) / 2;
   const codeBlockExtra = codeBlockCount * 40; // padding/border/copy-button chrome per block
-  return BASE + lines * LINE_HEIGHT + codeBlockExtra;
+  const attachExtra = (msg.images?.length || msg.docs?.length) ? 70 : 0;
+  return BASE + lines * LINE_HEIGHT + codeBlockExtra + attachExtra;
 }
 
 // Cache of cumulative prefix-sum heights per conversation, so repeated renders
@@ -1161,56 +1445,14 @@ function renderChat() {
 // Builds (or rebuilds) the streaming message DOM for an in-progress generation
 // and wires it into `gen` so scheduleUpdate() inside sendFromIndex can keep using it.
 function attachLiveGeneration(gen) {
-  if (gen.loadWrap === null && gen.wrap === null) {
-    // Generation hasn't received any content yet, show thinking dots.
-    gen.loadWrap = document.createElement('div');
-    gen.loadWrap.className = 'msg-wrapper assistant';
-    const dots = document.createElement('div'); dots.className='thinking'; dots.innerHTML='<span></span><span></span><span></span>';
-    gen.loadWrap.appendChild(dots);
+  if (!gen.assistantMsg.content && !gen.assistantMsg.think) {
+    gen.loadWrap = buildLoadingDots();
     chatEl.appendChild(gen.loadWrap);
     return;
   }
-
-  // Rebuild the streaming bubble from gen.assistantMsg's current state.
-  gen.wrap = document.createElement('div'); gen.wrap.className='msg-wrapper assistant'; gen.wrap.setAttribute('role','article');
-  const meta = document.createElement('div'); meta.className='msg-meta';
-  const lbl = document.createElement('span'); lbl.className='role-label'; lbl.textContent=modelSel.value||'Assistant';
-  const tsEl = document.createElement('span'); tsEl.className='msg-timestamp'; tsEl.textContent=new Date(gen.assistantMsg.ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-  gen.tokEl = document.createElement('span'); gen.tokEl.className='msg-tokens';
-  gen.spdEl = document.createElement('span'); gen.spdEl.className='msg-speed';
-  if (gen.totalTokens > 0) {
-    const tps = (gen.totalTokens / ((Date.now()-gen.startTime)/1000)).toFixed(1);
-    gen.tokEl.textContent = gen.totalTokens+' tok'; gen.spdEl.textContent = tps+' tok/s';
-  }
-  meta.append(lbl, tsEl, gen.tokEl, gen.spdEl);
-
-  gen.bubble = document.createElement('div'); gen.bubble.className='msg-bubble prose';
-  gen.bubble.style.cssText='padding:0;border:none;background:transparent;max-width:100%';
-
-  if (gen.assistantMsg.think) {
-    gen.thinkBlockEl = document.createElement('div'); gen.thinkBlockEl.className='think-block collapsed';
-    const h=document.createElement('div'); h.className='think-header'; h.setAttribute('role','button'); h.setAttribute('aria-expanded','false'); h.setAttribute('tabindex','0');
-    gen.thinkLblEl=document.createElement('span'); gen.thinkLblEl.className='think-label'; gen.thinkLblEl.textContent='Thinking…';
-    const ch=document.createElement('span'); ch.className='think-chevron'; ch.textContent='▾'; ch.setAttribute('aria-hidden','true');
-    h.append(gen.thinkLblEl,ch);
-    h.addEventListener('click',()=>{ const c=gen.thinkBlockEl.classList.toggle('collapsed'); h.setAttribute('aria-expanded',String(!c)); });
-    h.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();h.click();}});
-    gen.thinkBodyEl=document.createElement('div'); gen.thinkBodyEl.className='think-body prose';
-    gen.thinkBodyEl.innerHTML = renderMarkdown(gen.assistantMsg.think);
-    gen.thinkBlockEl.append(h,gen.thinkBodyEl);
-    gen.bubble.appendChild(gen.thinkBlockEl);
-  } else {
-    gen.thinkBlockEl = null; gen.thinkBodyEl = null; gen.thinkLblEl = null;
-  }
-
-  gen.contentEl = document.createElement('div');
-  gen.contentEl.innerHTML = renderMarkdown(gen.assistantMsg.content);
-  gen.cursor = document.createElement('span'); gen.cursor.className='streaming-cursor'; gen.cursor.setAttribute('aria-hidden','true');
-  gen.contentEl.appendChild(gen.cursor);
-  gen.bubble.appendChild(gen.contentEl);
-  gen.actsEl = document.createElement('div'); gen.actsEl.className='msg-actions';
-  gen.wrap.append(meta, gen.bubble, gen.actsEl);
-  chatEl.appendChild(gen.wrap);
+  gen.loadWrap = null;
+  gen.searchStatusEl = null;
+  chatEl.appendChild(buildLiveBubble(gen, modelSel.value));
 }
 
 function buildMsgEl(msg, index) {
@@ -1252,6 +1494,12 @@ function buildMsgEl(msg, index) {
     }
     if (msg.stopped) bubble.appendChild(buildStoppedNotice());
     if (msg.truncated) bubble.appendChild(buildTruncationNotice());
+    if (msg.sources?.length) bubble.appendChild(buildSourcesRow(msg.sources));
+    if (msg.searchCapped) {
+      const note = document.createElement('div'); note.className = 'search-capped-note';
+      note.textContent = `Stopped after ${MAX_TOOL_ROUNDS} search rounds for this reply.`;
+      bubble.appendChild(note);
+    }
   } else {
     if (msg.images?.length) {
       const imgRow = document.createElement('div');
@@ -1266,6 +1514,20 @@ function buildMsgEl(msg, index) {
       });
       bubble.appendChild(imgRow);
     }
+    if (msg.docs?.length) {
+      const docRow = document.createElement('div');
+      docRow.className = 'msg-docs';
+      msg.docs.forEach(doc => {
+        const chip = document.createElement('span');
+        chip.className = 'msg-doc-chip';
+        chip.title = doc.name;
+        const nameEl = document.createElement('span');
+        nameEl.textContent = doc.name;
+        chip.appendChild(nameEl);
+        docRow.appendChild(chip);
+      });
+      bubble.appendChild(docRow);
+    }
     if (msg.content) bubble.appendChild(document.createTextNode(msg.content));
   }
 
@@ -1277,6 +1539,7 @@ function buildMsgEl(msg, index) {
     navigator.clipboard.writeText(msg.content).then(() => { copyBtn.textContent='Copied!'; setTimeout(()=>copyBtn.textContent='Copy',1500); }).catch(e=>log.warn(e));
   });
   acts.appendChild(copyBtn);
+  acts.appendChild(makeBtn('Fork', () => forkConversationAt(index)));
   acts.appendChild(makeBtn('Delete', async () => {
     if (isGeneratingFor(activeId)) {
       await showModal('Can\'t delete right now', 'A response is still generating in this chat. Stop it first, then delete messages.', { confirmLabel: 'OK', confirmClass: 'btn' });
@@ -1297,6 +1560,22 @@ function makeBtn(label, handler) {
   b.className = 'action-btn'; b.textContent = label; b.setAttribute('aria-label', label);
   b.addEventListener('click', handler);
   return b;
+}
+
+function buildSourcesRow(sources) {
+  const row = document.createElement('div');
+  row.className = 'msg-sources';
+  sources.forEach(s => {
+    const a = document.createElement('a');
+    a.className = 'source-chip';
+    a.href = s.url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = s.title || s.url;
+    a.title = s.url;
+    row.appendChild(a);
+  });
+  return row;
 }
 
 function buildTruncationNotice() {
@@ -1347,22 +1626,63 @@ function startEdit(wrap, index) {
   const bubble = wrap.querySelector('.msg-bubble');
   bubble.style.display = 'none';
   const msgs = getMessages();
+  const original = msgs[index];
+
+  const editImages = (original.images || []).map(dataUrl => ({ dataUrl, name: 'Attached image' }));
+  const editDocs = (original.docs || []).map(d => ({ ...d }));
+
   const ta = document.createElement('textarea');
-  ta.className = 'edit-area'; ta.value = msgs[index].content; ta.setAttribute('aria-label','Edit message');
+  ta.className = 'edit-area'; ta.value = original.content; ta.setAttribute('aria-label','Edit message');
+
+  const editPreview = document.createElement('div');
+  editPreview.className = 'edit-attach-preview';
+  const renderEditPreview = () => renderAttachChips(
+    editPreview, editImages, editDocs,
+    i => { editImages.splice(i, 1); renderEditPreview(); },
+    i => { editDocs.splice(i, 1); renderEditPreview(); }
+  );
+  renderEditPreview();
+
+  const editImgInput = document.createElement('input');
+  editImgInput.type = 'file'; editImgInput.accept = 'image/*'; editImgInput.multiple = true; editImgInput.style.display = 'none';
+  editImgInput.addEventListener('change', async () => {
+    if (editImgInput.files.length) await addImagesTo(editImgInput.files, editImages, renderEditPreview);
+    editImgInput.value = '';
+  });
+
+  const editDocInput = document.createElement('input');
+  editDocInput.type = 'file'; editDocInput.accept = '.txt,.md,.markdown,.pdf,text/plain,text/markdown,application/pdf'; editDocInput.multiple = true; editDocInput.style.display = 'none';
+  editDocInput.addEventListener('change', async () => {
+    if (editDocInput.files.length) await addDocsTo(editDocInput.files, editDocs, renderEditPreview);
+    editDocInput.value = '';
+  });
+
   const ctrl = document.createElement('div'); ctrl.className = 'edit-controls';
-  const sBtn = document.createElement('button'); sBtn.className='btn'; sBtn.textContent='Send';
+  const imgBtn = document.createElement('button'); imgBtn.type = 'button'; imgBtn.className = 'btn secondary'; imgBtn.title = 'Attach image'; imgBtn.setAttribute('aria-label', 'Attach image'); imgBtn.textContent = '🖼';
+  imgBtn.addEventListener('click', () => editImgInput.click());
+  const docBtn = document.createElement('button'); docBtn.type = 'button'; docBtn.className = 'btn secondary'; docBtn.title = 'Attach document'; docBtn.setAttribute('aria-label', 'Attach document'); docBtn.textContent = '📎';
+  docBtn.addEventListener('click', () => editDocInput.click());
+  const sBtn = document.createElement('button'); sBtn.type = 'button'; sBtn.className='btn'; sBtn.textContent='Send';
   sBtn.addEventListener('click', () => {
     if (isGeneratingFor(activeId)) {
       showModal('Can\'t send right now', 'A response is still generating in this chat. Stop it first, then try again.', { confirmLabel: 'OK', confirmClass: 'btn' });
       return;
     }
-    const txt = ta.value.trim(); if (!txt) return;
-    const up = msgs.slice(0, index); up.push({ role:'user', content:txt, ts:Date.now() });
+    const txt = ta.value.trim();
+    if (!txt && editImages.length === 0 && editDocs.length === 0) return;
+    const up = msgs.slice(0, index);
+    up.push({
+      role: 'user', content: txt, ts: Date.now(),
+      ...(editImages.length ? { images: editImages.map(img => img.dataUrl) } : {}),
+      ...(editDocs.length ? { docs: editDocs.map(d => ({ name: d.name, text: d.text })) } : {}),
+    });
     setMessages(up); renderChat(); sendFromIndex(up.length - 1, activeId);
   });
-  const cBtn = document.createElement('button'); cBtn.className='btn secondary'; cBtn.textContent='Cancel';
-  cBtn.addEventListener('click', () => { ta.remove(); ctrl.remove(); bubble.style.display=''; });
-  ctrl.append(sBtn, cBtn); wrap.append(ta, ctrl); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  const cBtn = document.createElement('button'); cBtn.type = 'button'; cBtn.className='btn secondary'; cBtn.textContent='Cancel';
+  cBtn.addEventListener('click', () => { ta.remove(); editPreview.remove(); editImgInput.remove(); editDocInput.remove(); ctrl.remove(); bubble.style.display=''; });
+  ctrl.append(imgBtn, docBtn, sBtn, cBtn);
+  wrap.append(ta, editPreview, editImgInput, editDocInput, ctrl);
+  ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
 }
 
 // ── REGENERATE ──
@@ -1370,6 +1690,110 @@ function regenerate(index) {
   if (isGeneratingFor(activeId)) return;
   const msgs = getMessages(); const trimmed = msgs.slice(0, index);
   setMessages(trimmed); renderChat(); sendFromIndex(trimmed.length - 1, activeId);
+}
+
+// ── LIVE GENERATION DOM ──
+function buildLoadingDots() {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg-wrapper assistant';
+  const dots = document.createElement('div');
+  dots.className = 'thinking';
+  dots.innerHTML = '<span></span><span></span><span></span>';
+  wrap.appendChild(dots);
+  return wrap;
+}
+
+function buildLiveThinkBlock(gen) {
+  gen.thinkBlockEl = document.createElement('div'); gen.thinkBlockEl.className='think-block collapsed';
+  const h=document.createElement('div'); h.className='think-header'; h.setAttribute('role','button'); h.setAttribute('aria-expanded','false'); h.setAttribute('tabindex','0');
+  gen.thinkLblEl=document.createElement('span'); gen.thinkLblEl.className='think-label'; gen.thinkLblEl.textContent='Thinking…';
+  const ch=document.createElement('span'); ch.className='think-chevron'; ch.textContent='▾'; ch.setAttribute('aria-hidden','true');
+  h.append(gen.thinkLblEl,ch);
+  h.addEventListener('click',()=>{ const c=gen.thinkBlockEl.classList.toggle('collapsed'); h.setAttribute('aria-expanded',String(!c)); });
+  h.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();h.click();}});
+  gen.thinkBodyEl=document.createElement('div'); gen.thinkBodyEl.className='think-body prose';
+  gen.thinkBlockEl.append(h,gen.thinkBodyEl);
+  if (gen.contentEl?.parentNode === gen.bubble) gen.bubble.insertBefore(gen.thinkBlockEl, gen.contentEl);
+  else gen.bubble.appendChild(gen.thinkBlockEl);
+}
+
+function buildLiveBubble(gen, modelName) {
+  gen.wrap = document.createElement('div'); gen.wrap.className='msg-wrapper assistant'; gen.wrap.setAttribute('role','article');
+  const meta = document.createElement('div'); meta.className='msg-meta';
+  const lbl = document.createElement('span'); lbl.className='role-label'; lbl.textContent = modelName || 'Assistant';
+  const tsEl = document.createElement('span'); tsEl.className='msg-timestamp';
+  tsEl.textContent = new Date(gen.assistantMsg.ts || Date.now()).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+  gen.tokEl = document.createElement('span'); gen.tokEl.className='msg-tokens';
+  gen.spdEl = document.createElement('span'); gen.spdEl.className='msg-speed';
+  if (gen.totalTokens > 0) {
+    const tps = (gen.totalTokens / ((Date.now()-gen.startTime)/1000)).toFixed(1);
+    gen.tokEl.textContent = gen.totalTokens+' tok'; gen.spdEl.textContent = tps+' tok/s';
+  }
+  meta.append(lbl, tsEl, gen.tokEl, gen.spdEl);
+
+  gen.bubble = document.createElement('div'); gen.bubble.className='msg-bubble prose';
+  gen.bubble.style.cssText = 'padding:0;border:none;background:transparent;max-width:100%';
+  gen.thinkBlockEl = gen.thinkBodyEl = gen.thinkLblEl = null;
+  if (gen.assistantMsg.think) {
+    buildLiveThinkBlock(gen);
+    gen.thinkBodyEl.innerHTML = renderMarkdown(gen.assistantMsg.think);
+  }
+
+  gen.contentEl = document.createElement('div');
+  gen.contentEl.innerHTML = renderMarkdown(gen.assistantMsg.content);
+  gen.cursor = document.createElement('span'); gen.cursor.className='streaming-cursor'; gen.cursor.setAttribute('aria-hidden','true');
+  gen.contentEl.appendChild(gen.cursor);
+  gen.bubble.appendChild(gen.contentEl);
+
+  gen.actsEl = document.createElement('div'); gen.actsEl.className='msg-actions';
+  gen.wrap.append(meta, gen.bubble, gen.actsEl);
+  return gen.wrap;
+}
+
+// ── WEB SEARCH TOOL ──
+const WEB_SEARCH_TOOL = {
+  type: 'function',
+  function: {
+    name: 'web_search',
+    description: 'Search the web for current information. Use this when the answer requires up-to-date facts, recent events, or anything outside your training data.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The search query' },
+      },
+      required: ['query'],
+    },
+  },
+};
+const MAX_TOOL_ROUNDS = 3;
+const MAX_SEARCH_RESULTS = 5;
+
+async function callOllamaWebSearch(query, signal) {
+  const apiKey = searchApiKeyEl.value.trim();
+  if (!apiKey) throw new Error('No Ollama API key set. Add one in the Search panel.');
+  const proxyUrl = searchProxyUrlEl.value.trim().replace(/\/+$/, '');
+  const targetUrl = proxyUrl || 'https://ollama.com/api/web_search';
+  let res;
+  try {
+    res = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+      body: JSON.stringify({ query, max_results: MAX_SEARCH_RESULTS }),
+      signal,
+    });
+  } catch (e) {
+    if (e.name === 'AbortError') throw e;
+    throw new Error(proxyUrl
+      ? `Could not reach the search proxy at ${proxyUrl}. Is ollama-search-proxy.py running?`
+      : 'Browsers block calling ollama.com directly (CORS). Run ollama-search-proxy.py and set a Proxy URL in the Search panel, see the docs for setup.');
+  }
+  if (!res.ok) {
+    if (res.status === 401) throw new Error('Ollama API key was rejected (401). Check the key in the Search panel.');
+    const t = await res.text().catch(() => '');
+    throw new Error(`Web search failed: HTTP ${res.status}${t ? ', ' + t.slice(0, 200) : ''}`);
+  }
+  const data = await res.json();
+  return Array.isArray(data.results) ? data.results : [];
 }
 
 // ── GENERATION ──
@@ -1383,6 +1807,19 @@ function refreshGenerationUI() {
   stopBtn.style.display  = genActive ? 'flex'  : 'none';
   sendBtn.disabled = genActive || !portOk;
   sendBtn.title = !portOk ? `Can't send, "${rawPort}" isn't a valid port` : 'Send (Enter)';
+
+  modelSel.disabled = genActive;
+  portInput.disabled = genActive;
+  sshBtn.disabled = genActive;
+  sshHost.disabled = genActive;
+  sshRemPort.disabled = genActive;
+  sshLocPort.disabled = genActive;
+  searchBtn.disabled = genActive;
+  searchApiKeyEl.disabled = genActive;
+  searchProxyUrlEl.disabled = genActive;
+  const lockTitle = genActive ? 'Locked while a response is generating' : '';
+  modelSel.title = lockTitle;
+  portInput.title = lockTitle;
 }
 
 async function sendFromIndex(fromIndex, convoId = activeId) {
@@ -1393,6 +1830,12 @@ async function sendFromIndex(fromIndex, convoId = activeId) {
     (sshEnabled ? sshLocPort : portInput).focus();
     return;
   }
+  if (searchEnabled && !searchApiKeyEl.value.trim()) {
+    await showModal('No search API key', 'Search is enabled but no Ollama API key is set. Add one in the Search panel, or turn Search off.', { confirmLabel: 'OK', confirmClass: 'btn' });
+    searchBar.classList.add('visible'); searchBtn.classList.add('active'); searchBtn.setAttribute('aria-pressed','true');
+    searchApiKeyEl.focus();
+    return;
+  }
   if (!convoId) convoId = newConvo();
   refreshGenerationUI();
 
@@ -1401,7 +1844,12 @@ async function sendFromIndex(fromIndex, convoId = activeId) {
   const sysText = sysPmt.value.trim();
   if (sysText) apiMsgs.push({ role:'system', content:sysText });
   msgs.slice(0, fromIndex+1).forEach(m => {
-    const entry = { role: m.role, content: m.content };
+    let content = m.content;
+    if (m.docs?.length) {
+      const docText = m.docs.map(d => `[Attached file: ${d.name}]\n${d.text}`).join('\n\n');
+      content = content ? `${content}\n\n${docText}` : docText;
+    }
+    const entry = { role: m.role, content };
     if (m.images?.length) {
       entry.images = m.images.map(dataUrl => dataUrl.replace(/^data:[^;]+;base64,/, ''));
     }
@@ -1416,6 +1864,7 @@ async function sendFromIndex(fromIndex, convoId = activeId) {
     totalTokens: 0,
     doneReason: null,
     rafPending: false,
+    searchStatusEl: null,
     // DOM refs, only meaningful while convoId === activeId; created lazily below
     loadWrap: null, wrap: null, bubble: null, contentEl: null, cursor: null,
     thinkBlockEl: null, thinkBodyEl: null, thinkLblEl: null,
@@ -1426,10 +1875,7 @@ async function sendFromIndex(fromIndex, convoId = activeId) {
   const isVisible = () => convoId === activeId;
 
   if (isVisible()) {
-    gen.loadWrap = document.createElement('div');
-    gen.loadWrap.className = 'msg-wrapper assistant';
-    const dots = document.createElement('div'); dots.className='thinking'; dots.innerHTML='<span></span><span></span><span></span>';
-    gen.loadWrap.appendChild(dots);
+    gen.loadWrap = buildLoadingDots();
     if (emptyState.parentNode === chatEl) emptyState.remove();
     chatEl.appendChild(gen.loadWrap);
     scrollToBottom(true);
@@ -1437,158 +1883,211 @@ async function sendFromIndex(fromIndex, convoId = activeId) {
   refreshGenerationUI();
 
   const modelNameAtSend = modelSel.value;
+  const useTools = searchEnabled && !!searchApiKeyEl.value.trim();
+  const sources = [];
+  let searchTimeMs = 0;
+
+  function setSearchStatus(text) {
+    if (!isVisible() || !gen.bubble) return;
+    if (!text) {
+      if (gen.searchStatusEl) gen.searchStatusEl.style.display = 'none';
+      return;
+    }
+    if (!gen.searchStatusEl) {
+      gen.searchStatusEl = document.createElement('div');
+      gen.searchStatusEl.className = 'search-status';
+      gen.bubble.insertBefore(gen.searchStatusEl, gen.contentEl);
+    }
+    gen.searchStatusEl.style.display = '';
+    gen.searchStatusEl.textContent = text;
+  }
 
   try {
     const seedVal = parseInt(seedEl.value);
 
-  const hasImages = apiMsgs.some(m => m.images?.length);
-
-  const buildBody = (stripImages) => ({
-    model: modelNameAtSend, messages: stripImages
-      ? apiMsgs.map(m => { const { images, ...rest } = m; return rest; })
-      : apiMsgs,
-    stream: true, think: thinkEnabled, keep_alive: kaEl.value,
-    options: {
-      num_predict: parseInt(maxTokEl.value)||2048,
-      num_ctx: parseInt(ctxSzEl.value)||4096,
-      temperature: parseFloat(tempEl.value),
-      top_p: parseFloat(topPEl.value),
-      ...(seedVal >= 0 ? { seed: seedVal } : {}),
-    }
-  });
-
-  let res = await fetch(`${getBaseUrl()}/api/chat`, {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(buildBody(false)), signal:gen.abortCtrl.signal,
-  });
-
-  if (!res.ok && res.status === 400 && hasImages) {
-    const errText = await res.text().catch(()=>'');
-    if (errText.includes('multimodal') || errText.includes('does not support')) {
-      if (isVisible()) {
-        const warnWrap = document.createElement('div');
-        warnWrap.className = 'msg-wrapper assistant';
-        const warnMsg = document.createElement('div');
-        warnMsg.className = 'error-msg';
-        warnMsg.textContent = `⚠ ${modelNameAtSend} doesn't support images, retrying without them.`;
-        warnWrap.appendChild(warnMsg);
-        if (gen.loadWrap?.parentNode) {
-          chatEl.insertBefore(warnWrap, gen.loadWrap);
-        } else {
-          chatEl.appendChild(warnWrap);
-        }
+    const buildBody = (stripImages, withTools) => ({
+      model: modelNameAtSend, messages: stripImages
+        ? apiMsgs.map(m => { const { images, ...rest } = m; return rest; })
+        : apiMsgs,
+      stream: true, think: thinkEnabled, keep_alive: kaEl.value,
+      ...(withTools ? { tools: [WEB_SEARCH_TOOL] } : {}),
+      options: {
+        num_predict: parseInt(maxTokEl.value)||2048,
+        num_ctx: parseInt(ctxSzEl.value)||4096,
+        temperature: parseFloat(tempEl.value),
+        top_p: parseFloat(topPEl.value),
+        ...(seedVal >= 0 ? { seed: seedVal } : {}),
       }
-      res = await fetch(`${getBaseUrl()}/api/chat`, {
+    });
+
+    let toolsDisabledMidTurn = false;
+    let searchCapped = false;
+
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      const withToolsThisRound = useTools && !toolsDisabledMidTurn;
+      const hasImages = apiMsgs.some(m => m.images?.length);
+
+      let res = await fetch(`${getBaseUrl()}/api/chat`, {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify(buildBody(true)), signal:gen.abortCtrl.signal,
+        body:JSON.stringify(buildBody(false, withToolsThisRound)), signal:gen.abortCtrl.signal,
       });
-    }
-  }
 
-  if (!res.ok) { const t = await res.text().catch(()=>''); throw new Error(`HTTP ${res.status}${t?': '+t.slice(0,200):''}`); }
-
-    if (isVisible() && gen.loadWrap?.parentNode) gen.loadWrap.remove();
-
-    if (isVisible()) {
-      gen.wrap = document.createElement('div'); gen.wrap.className='msg-wrapper assistant'; gen.wrap.setAttribute('role','article');
-      const meta = document.createElement('div'); meta.className='msg-meta';
-      const lbl = document.createElement('span'); lbl.className='role-label'; lbl.textContent=modelNameAtSend||'Assistant';
-      const tsEl = document.createElement('span'); tsEl.className='msg-timestamp'; tsEl.textContent=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-      gen.tokEl = document.createElement('span'); gen.tokEl.className='msg-tokens';
-      gen.spdEl = document.createElement('span'); gen.spdEl.className='msg-speed';
-      meta.append(lbl, tsEl, gen.tokEl, gen.spdEl);
-
-      gen.bubble = document.createElement('div'); gen.bubble.className='msg-bubble prose';
-      gen.bubble.style.cssText='padding:0;border:none;background:transparent;max-width:100%';
-      gen.contentEl = document.createElement('div');
-      gen.cursor = document.createElement('span'); gen.cursor.className='streaming-cursor'; gen.cursor.setAttribute('aria-hidden','true');
-      gen.contentEl.appendChild(gen.cursor);
-      gen.bubble.appendChild(gen.contentEl);
-      gen.actsEl = document.createElement('div'); gen.actsEl.className='msg-actions';
-      gen.wrap.append(meta, gen.bubble, gen.actsEl);
-      chatEl.appendChild(gen.wrap);
-      scrollToBottom(true);
-    }
-
-    const reader = res.body.getReader(); const decoder = new TextDecoder();
-    let localStreamBuf = '';
-
-    let lastRenderedContent = '';
-    let lastRenderedThink = '';
-
-    const scheduleUpdate = () => {
-      if (!isVisible() || gen.rafPending) return;
-      gen.rafPending = true;
-      requestAnimationFrame(() => {
-        gen.rafPending = false;
-        if (!isVisible()) return; // user switched away before frame fired
-        if (!shouldRerender()) return;
-
-        if (gen.thinkBodyEl && gen.assistantMsg.think !== lastRenderedThink) {
-          gen.thinkBodyEl.innerHTML = renderMarkdown(gen.assistantMsg.think);
-          lastRenderedThink = gen.assistantMsg.think;
-        }
-        if (gen.assistantMsg.content !== lastRenderedContent) {
-          gen.cursor?.remove();
-          gen.contentEl.innerHTML = renderMarkdown(gen.assistantMsg.content);
-          gen.contentEl.appendChild(gen.cursor);
-          lastRenderedContent = gen.assistantMsg.content;
-        }
-        if (gen.totalTokens > 0) {
-          const tps = (gen.totalTokens / ((Date.now()-gen.startTime)/1000)).toFixed(1);
-          gen.tokEl.textContent = gen.totalTokens+' tok'; gen.spdEl.textContent = tps+' tok/s';
-        }
-        scrollToBottom();
-      });
-    };
-
-    while (true) {
-      const { done, value } = await reader.read(); if (done) break;
-      localStreamBuf += decoder.decode(value, { stream:true });
-      if (gen.assistantMsg.content) setMessages([...msgs, {...gen.assistantMsg}], { partialOk:true, id:convoId });
-      let nl;
-      while ((nl = localStreamBuf.indexOf('\n')) !== -1) {
-        const line = localStreamBuf.slice(0, nl).trim(); localStreamBuf = localStreamBuf.slice(nl+1);
-        if (!line) continue;
-        try {
-          const data = JSON.parse(line);
-          if (data.message?.thinking) {
-            gen.assistantMsg.think += data.message.thinking;
-            if (isVisible() && !gen.thinkBlockEl) {
-              gen.thinkBlockEl = document.createElement('div'); gen.thinkBlockEl.className='think-block collapsed';
-              const h=document.createElement('div'); h.className='think-header'; h.setAttribute('role','button'); h.setAttribute('aria-expanded','false'); h.setAttribute('tabindex','0');
-              gen.thinkLblEl=document.createElement('span'); gen.thinkLblEl.className='think-label'; gen.thinkLblEl.textContent='Thinking…';
-              const ch=document.createElement('span'); ch.className='think-chevron'; ch.textContent='▾'; ch.setAttribute('aria-hidden','true');
-              h.append(gen.thinkLblEl,ch);
-              h.addEventListener('click',()=>{ const c=gen.thinkBlockEl.classList.toggle('collapsed'); h.setAttribute('aria-expanded',String(!c)); });
-              h.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();h.click();}});
-              gen.thinkBodyEl=document.createElement('div'); gen.thinkBodyEl.className='think-body prose';
-              gen.thinkBlockEl.append(h,gen.thinkBodyEl); gen.bubble.insertBefore(gen.thinkBlockEl,gen.contentEl);
-            }
+      if (!res.ok && res.status === 400 && round === 0) {
+        const errText = await res.text().catch(()=>'');
+        if (hasImages && (errText.includes('multimodal') || errText.includes('does not support'))) {
+          if (isVisible()) {
+            const warnWrap = document.createElement('div');
+            warnWrap.className = 'msg-wrapper assistant';
+            const warnMsg = document.createElement('div');
+            warnMsg.className = 'error-msg';
+            warnMsg.textContent = `⚠ ${modelNameAtSend} doesn't support images, retrying without them.`;
+            warnWrap.appendChild(warnMsg);
+            if (gen.loadWrap?.parentNode) chatEl.insertBefore(warnWrap, gen.loadWrap);
+            else chatEl.appendChild(warnWrap);
           }
-          if (data.message?.content) {
-            if (gen.thinkLblEl) gen.thinkLblEl.textContent='Thinking';
-            gen.assistantMsg.content += data.message.content;
-          }
-          if (data.eval_count) gen.totalTokens = data.eval_count;
-          if (data.done_reason) gen.doneReason = data.done_reason;
-          scheduleUpdate();
-        } catch(e) { log.warn('stream parse error:', e.message); }
+          res = await fetch(`${getBaseUrl()}/api/chat`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify(buildBody(true, withToolsThisRound)), signal:gen.abortCtrl.signal,
+          });
+        } else if (withToolsThisRound && /tool/i.test(errText)) {
+          toolsDisabledMidTurn = true;
+          res = await fetch(`${getBaseUrl()}/api/chat`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify(buildBody(false, false)), signal:gen.abortCtrl.signal,
+          });
+        }
       }
+
+      if (!res.ok) { const t = await res.text().catch(()=>''); throw new Error(`HTTP ${res.status}${t?': '+t.slice(0,200):''}`); }
+
+      if (round === 0) {
+        if (isVisible() && gen.loadWrap?.parentNode) gen.loadWrap.remove();
+        if (isVisible()) {
+          chatEl.appendChild(buildLiveBubble(gen, modelNameAtSend));
+          scrollToBottom(true);
+        }
+      }
+      setSearchStatus(null);
+
+      const reader = res.body.getReader(); const decoder = new TextDecoder();
+      let localStreamBuf = '';
+      let lastRenderedContent = '';
+      let lastRenderedThink = '';
+      let roundContent = '';
+      let roundToolCalls = null;
+      const tokensBeforeRound = gen.totalTokens;
+
+      const scheduleUpdate = () => {
+        if (!isVisible() || gen.rafPending) return;
+        gen.rafPending = true;
+        requestAnimationFrame(() => {
+          gen.rafPending = false;
+          if (!isVisible()) return; // user switched away before frame fired
+          if (!shouldRerender()) return;
+
+          if (gen.thinkBodyEl && gen.assistantMsg.think !== lastRenderedThink) {
+            gen.thinkBodyEl.innerHTML = renderMarkdown(gen.assistantMsg.think);
+            lastRenderedThink = gen.assistantMsg.think;
+          }
+          if (gen.assistantMsg.content !== lastRenderedContent) {
+            gen.cursor?.remove();
+            gen.contentEl.innerHTML = renderMarkdown(gen.assistantMsg.content);
+            gen.contentEl.appendChild(gen.cursor);
+            lastRenderedContent = gen.assistantMsg.content;
+          }
+          if (gen.totalTokens > 0) {
+            const tps = (gen.totalTokens / ((Date.now()-gen.startTime)/1000)).toFixed(1);
+            gen.tokEl.textContent = gen.totalTokens+' tok'; gen.spdEl.textContent = tps+' tok/s';
+          }
+          scrollToBottom();
+        });
+      };
+
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break;
+        localStreamBuf += decoder.decode(value, { stream:true });
+        if (gen.assistantMsg.content || gen.assistantMsg.think) setMessages([...msgs, {...gen.assistantMsg}], { partialOk:true, id:convoId });
+        let nl;
+        while ((nl = localStreamBuf.indexOf('\n')) !== -1) {
+          const line = localStreamBuf.slice(0, nl).trim(); localStreamBuf = localStreamBuf.slice(nl+1);
+          if (!line) continue;
+          try {
+            const data = JSON.parse(line);
+            if (data.message?.thinking) {
+              gen.assistantMsg.think += data.message.thinking;
+              if (isVisible() && !gen.thinkBlockEl) buildLiveThinkBlock(gen);
+            }
+            if (data.message?.content) {
+              if (gen.thinkLblEl) gen.thinkLblEl.textContent='Thinking';
+              gen.assistantMsg.content += data.message.content;
+              roundContent += data.message.content;
+            }
+            if (data.message?.tool_calls?.length) roundToolCalls = data.message.tool_calls;
+            if (data.eval_count) gen.totalTokens = tokensBeforeRound + data.eval_count;
+            if (data.done_reason) gen.doneReason = data.done_reason;
+            scheduleUpdate();
+          } catch(e) { log.warn('stream parse error:', e.message); }
+        }
+      }
+
+      if (!roundToolCalls?.length) {
+        if (withToolsThisRound) log.warn(`Search was enabled and offered to "${modelNameAtSend}", but it didn't call the tool this round.`);
+        break; // normal completion, most common path
+      }
+      log.warn(`"${modelNameAtSend}" called tool(s):`, roundToolCalls.map(tc => tc.function?.name));
+
+      if (round >= MAX_TOOL_ROUNDS - 1) { searchCapped = true; break; }
+
+      apiMsgs.push({ role: 'assistant', content: roundContent, tool_calls: roundToolCalls });
+      for (const tc of roundToolCalls) {
+        const fnName = tc.function?.name;
+        let args = tc.function?.arguments;
+        if (typeof args === 'string') { try { args = JSON.parse(args); } catch { args = {}; } }
+        args = args || {};
+        if (fnName === 'web_search' && typeof args.query === 'string') {
+          setSearchStatus(`🔍 Searching the web for "${args.query}"…`);
+          const searchStart = Date.now();
+          try {
+            const results = await callOllamaWebSearch(args.query, gen.abortCtrl.signal);
+            for (const r of results) {
+              if (r?.url && !sources.some(s => s.url === r.url)) sources.push({ title: r.title || r.url, url: r.url });
+            }
+            apiMsgs.push({ role: 'tool', tool_name: 'web_search', content: JSON.stringify(results).slice(0, 8000) });
+          } catch (e) {
+            if (e.name === 'AbortError') throw e;
+            log.warn('web_search tool call failed:', e.message);
+            apiMsgs.push({ role: 'tool', tool_name: 'web_search', content: `Search failed: ${e.message}` });
+          } finally {
+            searchTimeMs += Date.now() - searchStart;
+          }
+        } else {
+          apiMsgs.push({ role: 'tool', tool_name: fnName || 'unknown', content: `Tool "${fnName || 'unknown'}" is not available.` });
+        }
+      }
+      setSearchStatus(null);
     }
 
-    const elapsed = (Date.now()-gen.startTime)/1000;
+    const elapsed = Math.max(0.001, (Date.now()-gen.startTime-searchTimeMs)/1000);
     gen.assistantMsg.tokens = gen.totalTokens;
     gen.assistantMsg.tps = gen.totalTokens > 0 ? parseFloat((gen.totalTokens/elapsed).toFixed(1)) : 0;
     if (gen.doneReason === 'length') gen.assistantMsg.truncated = true;
+    if (sources.length) gen.assistantMsg.sources = sources;
+    if (searchCapped) gen.assistantMsg.searchCapped = true;
     delete gen.assistantMsg._pending;
 
     if (isVisible()) {
       gen.cursor?.remove();
+      setSearchStatus(null);
       if (gen.thinkBodyEl) gen.thinkBodyEl.innerHTML = renderMarkdown(gen.assistantMsg.think);
       gen.contentEl.innerHTML = renderMarkdown(gen.assistantMsg.content);
       if (gen.totalTokens > 0) { gen.tokEl.textContent=gen.totalTokens+' tok'; gen.spdEl.textContent=gen.assistantMsg.tps+' tok/s'; }
       if (gen.assistantMsg.truncated) gen.bubble.appendChild(buildTruncationNotice());
+      if (sources.length) gen.bubble.appendChild(buildSourcesRow(sources));
+      if (searchCapped) {
+        const note = document.createElement('div'); note.className = 'search-capped-note';
+        note.textContent = `Stopped after ${MAX_TOOL_ROUNDS} search rounds for this reply.`;
+        gen.bubble.appendChild(note);
+      }
 
       const finalMsg = gen.assistantMsg;
       const regenBtn = makeBtn('Regenerate', () => { const idx=getMessages().findIndex(m=>m===finalMsg); if(idx>=0) regenerate(idx); });
@@ -1609,6 +2108,7 @@ async function sendFromIndex(fromIndex, convoId = activeId) {
       if (gen.assistantMsg.content || gen.assistantMsg.think) {
         gen.assistantMsg.stopped = true;
         delete gen.assistantMsg._pending;
+        if (sources.length) gen.assistantMsg.sources = sources;
         setMessages([...msgs, gen.assistantMsg], { id: convoId });
         if (isVisible()) renderChat();
       }
@@ -1640,16 +2140,25 @@ function fileToBase64(file) {
   });
 }
 
-async function addImages(files) {
-  const MAX_IMAGES = 8;
-  const allowed = [...files].filter(f => f.type.startsWith('image/')).slice(0, MAX_IMAGES - pendingImages.length);
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_IMAGES = 8;
+
+async function addImagesTo(files, targetArr, onDone) {
+  const candidates = [...files].filter(f => f.type.startsWith('image/')).slice(0, Math.max(0, MAX_IMAGES - targetArr.length));
+  const allowed = candidates.filter(f => f.size <= MAX_IMAGE_BYTES);
+  const oversized = candidates.length - allowed.length;
   for (const file of allowed) {
-    try {
-      const img = await fileToBase64(file);
-      pendingImages.push(img);
-    } catch(e) { log.warn('Failed to read image:', file.name, e); }
+    try { targetArr.push(await fileToBase64(file)); }
+    catch(e) { log.warn('Failed to read image:', file.name, e); }
   }
-  renderPreviewStrip();
+  if (oversized > 0) {
+    await showModal('Image too large', `${oversized} image${oversized !== 1 ? 's' : ''} skipped for exceeding the ${MAX_IMAGE_BYTES/1024/1024}MB limit.`, { confirmLabel: 'OK', confirmClass: 'btn' });
+  }
+  onDone();
+}
+
+async function addImages(files) {
+  await addImagesTo(files, pendingImages, renderPreviewStrip);
   refreshGenerationUI();
 }
 
@@ -1663,6 +2172,135 @@ function clearPendingImages() {
   pendingImages = [];
   renderPreviewStrip();
 }
+
+const MAX_DOCS = 4;
+const MAX_DOC_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_DOC_CHARS = 50000;
+const MAX_PDF_PAGES = 100;
+const PDF_WORKER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+let pdfWorkerReady = false;
+
+function ensurePdfWorker() {
+  if (pdfWorkerReady) return true;
+  if (typeof pdfjsLib === 'undefined') return false;
+  pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_WORKER_URL;
+  pdfWorkerReady = true;
+  return true;
+}
+
+async function extractPdfText(file) {
+  if (!ensurePdfWorker()) throw new Error('PDF support unavailable');
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  let text = '';
+  const pageCount = Math.min(pdf.numPages, MAX_PDF_PAGES);
+  for (let i = 1; i <= pageCount; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    text += content.items.map(it => it.str || '').join(' ') + '\n\n';
+    if (text.length > MAX_DOC_CHARS) break;
+  }
+  return text;
+}
+
+function extractDocText(file) {
+  if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) return extractPdfText(file);
+  return file.text();
+}
+
+async function addDocsTo(files, targetArr, onDone) {
+  const candidates = [...files].slice(0, Math.max(0, MAX_DOCS - targetArr.length));
+  let oversized = 0, failed = 0;
+  for (const file of candidates) {
+    if (file.size > MAX_DOC_FILE_BYTES) { oversized++; continue; }
+    try {
+      let text = (await extractDocText(file)).trim();
+      const truncated = text.length > MAX_DOC_CHARS;
+      if (truncated) text = text.slice(0, MAX_DOC_CHARS);
+      if (!text) { failed++; continue; }
+      targetArr.push({ name: file.name, text, truncated });
+    } catch (e) { log.warn('Failed to read document:', file.name, e); failed++; }
+  }
+  if (oversized > 0) {
+    await showModal('File too large', `${oversized} file${oversized !== 1 ? 's' : ''} skipped for exceeding the ${MAX_DOC_FILE_BYTES/1024/1024}MB limit.`, { confirmLabel: 'OK', confirmClass: 'btn' });
+  }
+  if (failed > 0) {
+    await showModal('Could not read file', `${failed} file${failed !== 1 ? 's' : ''} couldn't be read (unsupported, empty, or corrupt).`, { confirmLabel: 'OK', confirmClass: 'btn' });
+  }
+  onDone();
+}
+
+async function addDocs(files) {
+  await addDocsTo(files, pendingDocs, renderDocPreviewStrip);
+  refreshGenerationUI();
+}
+
+function removeDoc(idx) {
+  pendingDocs.splice(idx, 1);
+  renderDocPreviewStrip();
+  refreshGenerationUI();
+}
+
+function clearPendingDocs() {
+  pendingDocs = [];
+  renderDocPreviewStrip();
+}
+
+function renderAttachChips(container, images, docs, onRemoveImage, onRemoveDoc) {
+  container.innerHTML = '';
+  images.forEach((img, i) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'img-thumb-wrap';
+    const thumb = document.createElement('img');
+    thumb.className = 'img-thumb';
+    thumb.src = img.dataUrl;
+    thumb.alt = img.name || `Attached image ${i + 1}`;
+    const del = document.createElement('button');
+    del.className = 'img-thumb-del';
+    del.textContent = '✕';
+    del.setAttribute('aria-label', `Remove ${img.name || 'image'}`);
+    del.addEventListener('click', () => onRemoveImage(i));
+    wrap.append(thumb, del);
+    container.appendChild(wrap);
+  });
+  docs.forEach((doc, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'doc-chip';
+    const name = document.createElement('span');
+    name.className = 'doc-chip-name';
+    name.textContent = doc.name;
+    name.title = doc.name + (doc.truncated ? ' (truncated to fit)' : '');
+    const del = document.createElement('button');
+    del.className = 'doc-chip-del';
+    del.textContent = '✕';
+    del.setAttribute('aria-label', `Remove ${doc.name}`);
+    del.addEventListener('click', () => onRemoveDoc(i));
+    chip.append(name, del);
+    container.appendChild(chip);
+  });
+  container.classList.toggle('has-attachments', images.length > 0 || docs.length > 0);
+}
+
+function renderDocPreviewStrip() {
+  docPreviewStrip.innerHTML = '';
+  docPreviewStrip.classList.toggle('has-docs', pendingDocs.length > 0);
+  pendingDocs.forEach((doc, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'doc-chip';
+    const name = document.createElement('span');
+    name.className = 'doc-chip-name';
+    name.textContent = doc.name;
+    name.title = doc.name + (doc.truncated ? ' (truncated to fit)' : '');
+    const del = document.createElement('button');
+    del.className = 'doc-chip-del';
+    del.textContent = '✕';
+    del.setAttribute('aria-label', `Remove ${doc.name}`);
+    del.addEventListener('click', () => removeDoc(i));
+    chip.append(name, del);
+    docPreviewStrip.appendChild(chip);
+  });
+}
+
 
 function renderPreviewStrip() {
   imagePreviewStrip.innerHTML = '';
@@ -1686,7 +2324,7 @@ function renderPreviewStrip() {
 
 async function sendMessage() {
   const text = msgInput.value.trim();
-  if (!text && pendingImages.length === 0) return;
+  if (!text && pendingImages.length === 0 && pendingDocs.length === 0) return;
   if (isGeneratingFor(activeId)) return;
   const rawPort = sshEnabled ? sshLocPort.value : portInput.value;
   if (!isPortValid(rawPort)) {
@@ -1699,8 +2337,10 @@ async function sendMessage() {
   const convoId = activeId;
   const msgs = getMessages(convoId);
   const images = pendingImages.map(img => img.dataUrl);
-  const userMsg = { role:'user', content:text, ts:Date.now(), ...(images.length ? { images } : {}) };
+  const docs = pendingDocs.map(d => ({ name: d.name, text: d.text }));
+  const userMsg = { role:'user', content:text, ts:Date.now(), ...(images.length ? { images } : {}), ...(docs.length ? { docs } : {}) };
   clearPendingImages();
+  clearPendingDocs();
   setMessages([...msgs, userMsg], { id: convoId });
   if (emptyState.parentNode === chatEl) emptyState.remove();
   chatEl.appendChild(buildMsgEl(userMsg, msgs.length));
@@ -1710,9 +2350,33 @@ async function sendMessage() {
 
 // ── DELEGATED CODE COPY ──
 chatEl.addEventListener('click', e => {
-  const btn = e.target.closest('.copy-code-btn'); if (!btn) return;
-  const el = document.getElementById(btn.dataset.copyId); if (!el) return;
-  navigator.clipboard.writeText(el.textContent).then(() => { btn.textContent='copied!'; setTimeout(()=>btn.textContent='copy',1500); }).catch(e=>log.warn(e));
+  const copyBtn = e.target.closest('.copy-code-btn');
+  if (copyBtn) {
+    const el = document.getElementById(copyBtn.dataset.copyId); if (!el) return;
+    navigator.clipboard.writeText(el.textContent).then(() => { copyBtn.textContent='copied!'; setTimeout(()=>copyBtn.textContent='copy',1500); }).catch(e=>log.warn(e));
+    return;
+  }
+  const wrapBtn = e.target.closest('.wrap-code-btn');
+  if (wrapBtn) {
+    const el = document.getElementById(wrapBtn.dataset.wrapId); if (!el) return;
+    const nowWrapped = el.classList.toggle('wrapped');
+    wrapBtn.classList.toggle('active', nowWrapped);
+    wrapBtn.setAttribute('aria-pressed', String(nowWrapped));
+    const gutter = el.closest('.code-block-body')?.querySelector('.code-line-numbers');
+    if (gutter) gutter.style.visibility = nowWrapped ? 'hidden' : '';
+    return;
+  }
+  const dlBtn = e.target.closest('.dl-code-btn');
+  if (dlBtn) {
+    const el = document.getElementById(dlBtn.dataset.dlId); if (!el) return;
+    const ext = dlBtn.dataset.dlExt || 'txt';
+    const blob = new Blob([el.textContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `snippet-${dlBtn.dataset.dlId}.${ext}`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 });
 
 // ── CHAR COUNTER ──
@@ -1746,17 +2410,80 @@ function validatePortField(el) {
 
 portInput.addEventListener('input', () => { validatePortField(portInput); refreshGenerationUI(); });
 portInput.addEventListener('change', () => { loadModels(modelSel.value); persist(); });
-modelSel.addEventListener('change', persist);
+modelSel.addEventListener('change', () => { persist(); checkModelCapabilities(modelSel.value); });
 statusPill.addEventListener('click', () => loadModels(modelSel.value));
 systemBtn.addEventListener('click', () => toggleBar(systemBtn, systemBar));
 settingsBtn.addEventListener('click', () => toggleBar(settingsBtn, settingsBar));
 thinkBtn.addEventListener('click', () => { thinkEnabled=!thinkEnabled; thinkBtn.classList.toggle('active',thinkEnabled); thinkBtn.setAttribute('aria-pressed',String(thinkEnabled)); persist(); });
+searchBtn.addEventListener('click', () => {
+  searchEnabled = !searchEnabled;
+  searchBtn.classList.toggle('active', searchEnabled);
+  searchBtn.setAttribute('aria-pressed', String(searchEnabled));
+  searchBar.classList.toggle('visible', searchEnabled);
+  updateSearchModelNote();
+  persist();
+});
+searchApiKeyEl.addEventListener('input', () => persist());
+searchProxyUrlEl.addEventListener('input', () => persist());
 sshBtn.addEventListener('click', () => { sshEnabled=!sshEnabled; sshBtn.classList.toggle('active',sshEnabled); sshBtn.setAttribute('aria-pressed',String(sshEnabled)); sshBar.classList.toggle('visible',sshEnabled); persist(); updateSshCmd(); loadModels(modelSel.value); refreshGenerationUI(); });
 diagBtn.addEventListener('click', () => { toggleBar(diagBtn, diagBar); if (diagBar.classList.contains('visible')) loadDiagnostics(); });
 themeBtn.addEventListener('click', () => { const d=document.documentElement.getAttribute('data-theme')==='dark'; document.documentElement.setAttribute('data-theme',d?'light':'dark'); themeBtn.textContent=d?'☾':'☀'; persist(); });
 sidebarTog.addEventListener('click', () => { sidebarEl.classList.toggle('collapsed'); persist(); });
 newChatBtn.addEventListener('click', newConvo);
 sysPmt.addEventListener('input', () => { updateCharCount(); persist(); });
+
+const TEMPLATES_KEY = 'ollama_prompt_templates';
+const MAX_TEMPLATES = 100;
+function getTemplates() { return safeGet(TEMPLATES_KEY, []); }
+function setTemplates(list) { safeSet(TEMPLATES_KEY, list); }
+
+function renderTemplateOptions() {
+  const templates = getTemplates();
+  const current = templateSel.value;
+  templateSel.innerHTML = '<option value="">Saved prompts…</option>' +
+    templates.map(t => `<option value="${escHtml(t.id)}">${escHtml(t.name)}</option>`).join('');
+  if (templates.some(t => t.id === current)) templateSel.value = current;
+  templateDelBtn.disabled = !templateSel.value;
+}
+
+templateSel.addEventListener('change', () => {
+  templateDelBtn.disabled = !templateSel.value;
+  const t = getTemplates().find(t => t.id === templateSel.value);
+  if (!t) return;
+  sysPmt.value = t.text;
+  updateCharCount();
+  persist();
+});
+
+templateSaveBtn.addEventListener('click', async () => {
+  const text = sysPmt.value.trim();
+  if (!text) {
+    await showModal('Nothing to save', 'Write a system prompt first, then save it as a template.', { confirmLabel: 'OK', confirmClass: 'btn' });
+    return;
+  }
+  const templates = getTemplates();
+  if (templates.length >= MAX_TEMPLATES) {
+    await showModal('Too many templates', `You have ${MAX_TEMPLATES} saved templates already. Delete one before saving another.`, { confirmLabel: 'OK', confirmClass: 'btn' });
+    return;
+  }
+  const name = await showModal('Save prompt template', '', { confirmLabel: 'Save', confirmClass: 'btn', showInput: true, inputValue: '' });
+  if (!name) return;
+  templates.push({ id: genId(), name: name.slice(0, 60), text: text.slice(0, 4000) });
+  setTemplates(templates);
+  renderTemplateOptions();
+  templateSel.value = templates[templates.length - 1].id;
+  templateDelBtn.disabled = false;
+});
+
+templateDelBtn.addEventListener('click', async () => {
+  const id = templateSel.value;
+  if (!id) return;
+  const t = getTemplates().find(t => t.id === id);
+  const ok = await showModal('Delete template?', `"${t?.name || 'This template'}" will be permanently deleted.`);
+  if (!ok) return;
+  setTemplates(getTemplates().filter(t => t.id !== id));
+  renderTemplateOptions();
+});
 [sshHost,sshRemPort,sshLocPort].forEach(el => el.addEventListener('input', () => { updateSshCmd(); persist(); }));
 sshLocPort.addEventListener('input', () => { validatePortField(sshLocPort); refreshGenerationUI(); });
 [tempEl,topPEl,seedEl,kaEl].forEach(el => el.addEventListener('input', persist));
@@ -1786,6 +2513,7 @@ clearBtn.addEventListener('click', () => {
   userScrolledUp=false; isProgrammatic=false;
   if (activeId) setMessages([]);
   clearPendingImages();
+  clearPendingDocs();
   renderChat();
   refreshGenerationUI();
   restoreLastConnectionStatus();
@@ -1798,8 +2526,56 @@ sendBtn.addEventListener('click', sendMessage);
 msgInput.addEventListener('keydown', e => { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();} });
 msgInput.addEventListener('input', () => { msgInput.style.height='auto'; msgInput.style.height=Math.min(msgInput.scrollHeight,160)+'px'; });
 
+// ── VOICE INPUT ──
+const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (SpeechRecognitionCtor) {
+  micBtn.hidden = false;
+  micBtn.setAttribute('aria-pressed', 'false');
+  const recognizer = new SpeechRecognitionCtor();
+  recognizer.continuous = true;
+  recognizer.interimResults = true;
+  try { recognizer.lang = navigator.language || 'en-US'; } catch {}
+
+  let isRecording = false;
+  let baseText = '';
+
+  const stopVisuals = () => {
+    isRecording = false;
+    micBtn.classList.remove('recording');
+    micBtn.setAttribute('aria-pressed', 'false');
+  };
+
+  recognizer.addEventListener('result', e => {
+    let finalTranscript = '', interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      if (r.isFinal) finalTranscript += r[0].transcript;
+      else interim += r[0].transcript;
+    }
+    if (finalTranscript) baseText = (baseText ? baseText + ' ' : '') + finalTranscript.trim();
+    msgInput.value = (baseText + (interim ? ' ' + interim : '')).trim();
+    msgInput.style.height = 'auto'; msgInput.style.height = Math.min(msgInput.scrollHeight, 160) + 'px';
+  });
+  recognizer.addEventListener('end', stopVisuals);
+  recognizer.addEventListener('error', e => { log.warn('Speech recognition error:', e.error); stopVisuals(); });
+
+  micBtn.addEventListener('click', () => {
+    if (isRecording) { recognizer.stop(); return; }
+    baseText = msgInput.value.trim();
+    try {
+      recognizer.start();
+      isRecording = true;
+      micBtn.classList.add('recording');
+      micBtn.setAttribute('aria-pressed', 'true');
+    } catch (e) { log.warn('Could not start speech recognition:', e); }
+  });
+}
+
 attachBtn.addEventListener('click', () => imageFileInput.click());
 imageFileInput.addEventListener('change', () => { if (imageFileInput.files.length) addImages(imageFileInput.files); imageFileInput.value = ''; });
+
+docAttachBtn.addEventListener('click', () => docFileInput.click());
+docFileInput.addEventListener('change', () => { if (docFileInput.files.length) addDocs(docFileInput.files); docFileInput.value = ''; });
 
 msgInput.addEventListener('paste', e => {
   const items = [...(e.clipboardData?.items || [])];
@@ -1810,13 +2586,17 @@ msgInput.addEventListener('paste', e => {
   }
 });
 
+const DOC_FILE_PATTERN = /\.(txt|md|markdown|pdf)$/i;
 inputAreaWrap.addEventListener('dragover', e => { e.preventDefault(); inputAreaWrap.classList.add('drag-over'); });
 inputAreaWrap.addEventListener('dragleave', e => { if (!inputAreaWrap.contains(e.relatedTarget)) inputAreaWrap.classList.remove('drag-over'); });
 inputAreaWrap.addEventListener('drop', e => {
   e.preventDefault();
   inputAreaWrap.classList.remove('drag-over');
-  const files = [...(e.dataTransfer?.files || [])].filter(f => f.type.startsWith('image/'));
-  if (files.length) addImages(files);
+  const files = [...(e.dataTransfer?.files || [])];
+  const images = files.filter(f => f.type.startsWith('image/'));
+  const docs = files.filter(f => !f.type.startsWith('image/') && (DOC_FILE_PATTERN.test(f.name) || f.type === 'text/plain' || f.type === 'text/markdown' || f.type === 'application/pdf'));
+  if (images.length) addImages(images);
+  if (docs.length) addDocs(docs);
 });
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key==='N') { e.preventDefault(); newConvo(); }
@@ -1833,6 +2613,7 @@ document.addEventListener('click', e => {
 // ── INIT ──
 const preferredModel = loadPersisted();
 updateCharCount();
+renderTemplateOptions();
 const savedIds = sortedIds();
 if (!savedIds.length || !activeId || !conversations[activeId]) {
   newConvo();
