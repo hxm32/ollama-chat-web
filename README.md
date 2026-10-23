@@ -2,7 +2,7 @@
 
 A lightweight, single-file web UI for chatting with local or remote Ollama models.
 
-Built with plain HTML, CSS, and JavaScript - no build tools, frameworks, or backend required. (The one optional exception is the Web Search feature, which needs a tiny companion script — see [Web Search](#web-search).)
+Built with plain HTML, CSS, and JavaScript - no build tools, frameworks, or backend required. (The one optional exception is the Web Search feature, which needs a tiny companion script, see [Web Search](#web-search).)
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Ollama](https://img.shields.io/badge/Ollama-Compatible-green)
@@ -57,7 +57,7 @@ Connect to Ollama running on another machine via SSH tunneling.
 The interface generates the SSH command automatically:
 
 ```bash
-ssh -L 11434:localhost:11434 user@server -N
+ssh -L 11434:localhost:11434 user@ip -N
 ```
 
 ### Rich Output Rendering
